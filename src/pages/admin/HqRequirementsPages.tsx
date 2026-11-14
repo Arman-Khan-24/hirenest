@@ -1,4 +1,5 @@
 import { parseJobDescription } from '../../lib/jobDescription';
+import { usePersistedState } from '../../lib/usePersistedState';
 import { formatExperienceRange } from '../../lib/format';
 import { fetchCandidateHistory, PAST_OUTCOME_LABEL } from '../../lib/candidateHistory';
 import {
@@ -117,16 +118,20 @@ export const HqRequirementsListPage: React.FC = () => {
   const prefix = profile?.role === 'admin' ? '/admin' : '/recruiter';
 
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState<RequirementStatus | ''>(
-    (searchParams.get('status') as RequirementStatus) || ''
+  // Filters persist (per user) until cleared, even across page refreshes.
+  const fk = (name: string) => `hn:filters:hq-requirements:${profile?.id ?? 'anon'}:${name}`;
+  const [status, setStatus] = usePersistedState<RequirementStatus | ''>(
+    fk('status'),
+    '',
+    (searchParams.get('status') as RequirementStatus) || null
   );
-  const [clientOrgId, setClientOrgId] = useState('');
-  const [publicFilter, setPublicFilter] = useState<string>('');
-  const [mappingFilter, setMappingFilter] = useState<'all' | 'mapped' | 'unmapped'>('all');
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [quickFilter, setQuickFilter] = useState<PipelineQuickFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState<RequirementCategoryFilterValue>('all');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [clientOrgId, setClientOrgId] = usePersistedState<string>(fk('client'), '');
+  const [publicFilter, setPublicFilter] = usePersistedState<string>(fk('visibility'), '');
+  const [mappingFilter, setMappingFilter] = usePersistedState<'all' | 'mapped' | 'unmapped'>(fk('mapping'), 'all');
+  const [search, setSearch] = usePersistedState<string>(fk('search'), '', searchParams.get('search') || null);
+  const [quickFilter, setQuickFilter] = usePersistedState<PipelineQuickFilter>(fk('quick'), 'all');
+  const [categoryFilter, setCategoryFilter] = usePersistedState<RequirementCategoryFilterValue>(fk('category'), 'all');
+  const [viewMode, setViewMode] = usePersistedState<'cards' | 'table'>(fk('view'), 'cards');
   const [createOpen, setCreateOpen] = useState(false);
   const [syncingVendors, setSyncingVendors] = useState(false);
   const [syncingSheet, setSyncingSheet] = useState(false);

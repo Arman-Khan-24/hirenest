@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from 'react';
+import { usePersistedState } from '../../lib/usePersistedState';
 import { formatExperienceRange } from '../../lib/format';
 import { RequirementRibbon } from '../../components/domain/RequirementRibbon';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -337,8 +338,15 @@ export const ClientRequirementsPage: React.FC = () => {
 
   const isManager = profile?.role === 'client_manager';
   const [page, setPage] = useState(1);
-  const [status, setStatus] = useState<RequirementStatus | ''>('');
-  const [search, setSearch] = useState(searchParams.get('search') || '');
+  const [status, setStatus] = usePersistedState<RequirementStatus | ''>(
+    `hn:filters:client-requirements:${profile?.id ?? 'anon'}:status`,
+    ''
+  );
+  const [search, setSearch] = usePersistedState<string>(
+    `hn:filters:client-requirements:${profile?.id ?? 'anon'}:search`,
+    '',
+    searchParams.get('search') || null
+  );
   const [createOpen, setCreateOpen] = useState(false);
 
   const [deleteTarget, setDeleteTarget] = useState<Requirement | null>(null);

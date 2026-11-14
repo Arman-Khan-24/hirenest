@@ -1,4 +1,5 @@
 import React, { useState, useMemo } from 'react';
+import { usePersistedState } from '../../lib/usePersistedState';
 import { formatExperienceRange } from '../../lib/format';
 import { displayClientName } from '../../lib/clientIdentity';
 import {
@@ -587,14 +588,16 @@ export const VendorRequirementsPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
-  const [search, setSearch] = useState(searchParams.get('search') || '');
-  const [quickFilter, setQuickFilter] = useState<PipelineQuickFilter>('all');
-  const [categoryFilter, setCategoryFilter] = useState<RequirementCategoryFilterValue>('all');
+  // Filters persist (per user) until cleared, even across page refreshes.
+  const fk = (name: string) => `hn:filters:vendor-requirements:${profile?.id ?? 'anon'}:${name}`;
+  const [search, setSearch] = usePersistedState<string>(fk('search'), '', searchParams.get('search') || null);
+  const [quickFilter, setQuickFilter] = usePersistedState<PipelineQuickFilter>(fk('quick'), 'all');
+  const [categoryFilter, setCategoryFilter] = usePersistedState<RequirementCategoryFilterValue>(fk('category'), 'all');
   // Default to open requirements, like the HQ list.
-  const [statusFilter, setStatusFilter] = useState<string>('open');
-  const [workModeFilter, setWorkModeFilter] = useState<string>('');
-  const [employmentFilter, setEmploymentFilter] = useState<string>('');
-  const [viewMode, setViewMode] = useState<'cards' | 'table'>('cards');
+  const [statusFilter, setStatusFilter] = usePersistedState<string>(fk('status'), 'open');
+  const [workModeFilter, setWorkModeFilter] = usePersistedState<string>(fk('workmode'), '');
+  const [employmentFilter, setEmploymentFilter] = usePersistedState<string>(fk('employment'), '');
+  const [viewMode, setViewMode] = usePersistedState<'cards' | 'table'>(fk('view'), 'cards');
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['vendor_requirements', page, search],
