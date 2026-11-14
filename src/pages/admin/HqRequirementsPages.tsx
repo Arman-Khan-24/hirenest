@@ -1442,6 +1442,7 @@ export const HqRequirementDetailPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
+      <RequirementRibbon requirement={req} className="-mb-4" />
       <PageHeader
         title={req.title}
         description={

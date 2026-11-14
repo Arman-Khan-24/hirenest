@@ -503,6 +503,7 @@ export const VendorDashboardPage: React.FC = () => {
                         className="hover:bg-[var(--bg-hover)] cursor-pointer transition-colors"
                       >
                         <td className="py-3 px-4">
+                          {job && <RequirementRibbon requirement={job} />}
                           <div className="font-medium text-[var(--text-primary)] flex items-center gap-2">
                             {job?.title || sh.requirement_id}
                             {!sh.acknowledged_at && <Badge tone="warning">New</Badge>}
@@ -990,6 +991,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px]">
+      <RequirementRibbon requirement={req} className="mb-1" />
       <PageHeader
         title={req.title}
         description={`${req.location} (${req.work_mode}) · ${formatExperienceRange(req.min_experience, req.max_experience)} · Vendor budget: ${budgetInfo.formatted}${budgetInfo.subtitle ? ` (${budgetInfo.subtitle})` : ''}`}

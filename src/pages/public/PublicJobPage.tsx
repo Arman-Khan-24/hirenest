@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { RequirementRibbon } from '../../components/domain/RequirementRibbon';
 import { useParams, useNavigate, useLocation, Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
@@ -207,6 +208,7 @@ export const PublicJobPage: React.FC = () => {
             </span>
             <span className="font-mono text-slate-400">Posted {formatPostedDate(job.posted_at)}</span>
           </div>
+          <RequirementRibbon requirement={job} />
           <h1 className="!text-white text-3xl font-extrabold leading-tight tracking-tight sm:text-4xl lg:text-[44px]">{job.title}</h1>
           {job.client_org_name && (
             <div className="flex items-center gap-2 text-base text-slate-300 sm:text-lg">

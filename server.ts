@@ -1190,6 +1190,14 @@ function scrubPII(input: string): string {
     .slice(0, 6000);
 }
 
+function sanitizePublicCurrency(raw: unknown): string {
+  const str = String(raw || 'INR');
+  const base = str.split('|')[0].trim() || 'INR';
+  const cat = /\|cat=(it|non_it)(?:\||$)/.exec(str);
+  const pt = /\|pt=(bench|market)(?:\||$)/.exec(str);
+  return base + (cat ? `|cat=${cat[1]}` : '') + (pt ? `|pt=${pt[1]}` : '');
+}
+
 function resolveServerGeminiApiKey(): string | null {
   const candidates = [
     process.env.GEMINI_API_KEY,
@@ -1724,7 +1732,8 @@ async function startServer() {
 
       const rows = await response.json() as Array<Record<string, unknown>>;
       if (rows.length > 0 && rows[0].id) {
-        return res.json(rows[0]);
+        // Public pages never receive budget / client-mapping metadata, only category and profile type.
+        return res.json({ ...rows[0], currency: sanitizePublicCurrency(rows[0].currency) });
       }
 
       return res.status(404).json({ error: 'Requirement not found' });
@@ -5670,7 +5679,7 @@ async function fetchShareableJobBySlug(slug: string): Promise<Record<string, unk
     work_mode: data.work_mode,
     employment_type: data.employment_type,
     openings: data.openings,
-    currency: data.currency,
+    currency: sanitizePublicCurrency(data.currency),
     status: data.status,
     client_org_name: clientOrgName,
     posted_at: data.opened_at || data.created_at,

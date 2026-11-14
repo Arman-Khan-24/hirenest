@@ -34,6 +34,7 @@ export interface PublicJobSummary {
   max_experience: number | null;
   client_org_name: string | null;
   posted_at: string;
+  currency?: string;
 }
 
 export async function fetchPublicJob(slug: string): Promise<PublicJob | null> {

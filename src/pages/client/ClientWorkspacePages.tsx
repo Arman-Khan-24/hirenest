@@ -887,6 +887,7 @@ export const ClientRequirementDetailPage: React.FC = () => {
 
   return (
     <div className="max-w-[1200px]">
+      <RequirementRibbon requirement={req} className="mb-1" />
       <PageHeader
         title={req.title}
         description={`${req.location} (${req.work_mode}) · ${formatExperienceRange(req.min_experience, req.max_experience)} · ${req.openings} opening(s)`}

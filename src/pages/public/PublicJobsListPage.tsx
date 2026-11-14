@@ -1,4 +1,5 @@
 import React from 'react';
+import { RequirementRibbon } from '../../components/domain/RequirementRibbon';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Briefcase, Building2, Clock, MapPin, Search, AlertCircle } from 'lucide-react';
@@ -215,6 +216,7 @@ const JobRow: React.FC<{ job: PublicJobSummary }> = ({ job }) => {
             {initial}
           </div>
           <div className="min-w-0 space-y-1.5">
+            <RequirementRibbon requirement={{ title: job.title, currency: job.currency }} />
             <h3 className="truncate text-lg font-bold text-slate-900 group-hover:text-indigo-700">{job.title}</h3>
             {job.client_org_name && (
               <div className="flex items-center gap-1.5 text-sm text-slate-600">

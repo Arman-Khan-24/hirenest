@@ -813,6 +813,7 @@ export const CandidateBrowseJobsPage: React.FC = () => {
                           {job.employment_type === 'full_time' ? 'FTE (Full-Time)' : job.employment_type.replace(/_/g, ' ')}
                         </span>
                       </div>
+                      <RequirementRibbon requirement={job} />
                       <h3 className="text-[14px] font-medium text-[var(--text-primary)]">
                         {job.title}
                       </h3>
