@@ -91,8 +91,8 @@ export const PrivacyPolicyPage: React.FC = () => {
           <Section title="8. Contact Us">
             <p>
               For any privacy-related questions or to exercise your data rights, contact us at:{' '}
-              <a href="mailto:hireatkind@gmail.com" className="text-[#1A56C2] hover:underline">
-                hireatkind@gmail.com
+              <a href="mailto:info@hirenestworkforce.com" className="text-[#1A56C2] hover:underline">
+                info@hirenestworkforce.com
               </a>
             </p>
           </Section>

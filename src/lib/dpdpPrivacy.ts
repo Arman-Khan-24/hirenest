@@ -238,7 +238,7 @@ export const INITIAL_PRIVACY_NOTICES: PrivacyNoticeRecord[] = [
     contentSummary:
       'Explains categories of personal data collected (resume, contact details, employment history, skills, interview evaluations), specific recruitment purposes, Data Fiduciary/Processor responsibilities, AI Gateway PII redaction safeguards, retention windows, and how Data Principals can exercise rights of access, correction, consent withdrawal, erasure, and grievance redressal.',
     fiduciaryEntity: 'HireNest Workforce Private Limited (Technical Partner: AIKIND Private Limited)',
-    grievanceOfficerContact: 'hireatkind@gmail.com',
+    grievanceOfficerContact: 'dpo-grievance@hirenestworkforce.com',
   },
   {
     noticeId: 'HN-DPDP-VENDOR-2026-V1',
@@ -256,7 +256,7 @@ export const INITIAL_PRIVACY_NOTICES: PrivacyNoticeRecord[] = [
     contentSummary:
       'Requires staffing vendors uploading candidate resumes to attest that the candidate has received the HireNestOS DPDP Notice and authorized submission to the specific requirement.',
     fiduciaryEntity: 'HireNest Workforce Private Limited',
-    grievanceOfficerContact: 'hireatkind@gmail.com',
+    grievanceOfficerContact: 'vendor-privacy@hirenestworkforce.com',
   },
 ];
 

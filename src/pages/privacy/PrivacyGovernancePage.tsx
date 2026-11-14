@@ -655,7 +655,7 @@ export const PrivacyGovernancePage: React.FC = () => {
                 <li className="flex items-start gap-2">
                   <CheckCircle2 className="h-4 w-4 text-[#1D5FD1] shrink-0 mt-0.5" />
                   <span>
-                    <strong className="text-[var(--text-primary)]">Grievance Officer &amp; DSR Decisions:</strong> Designate the Grievance Officer (<span className="font-mono text-[12px]">hireatkind@gmail.com</span>), verify requester identity, and approve access/correction/erasure outcomes within SLA.
+                    <strong className="text-[var(--text-primary)]">Grievance Officer &amp; DSR Decisions:</strong> Designate the Grievance Officer (<span className="font-mono text-[12px]">dpo-grievance@hirenestworkforce.com</span>), verify requester identity, and approve access/correction/erasure outcomes within SLA.
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
