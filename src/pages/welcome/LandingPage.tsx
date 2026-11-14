@@ -761,11 +761,31 @@ export const LandingPage: React.FC = () => {
                 <span className="text-[11px] text-slate-400">Hire Nest Workforce Pvt Ltd</span>
               </div>
             </div>
-            <nav className="flex items-center gap-6 text-[13px] text-slate-300">
+            <nav className="flex flex-wrap items-center gap-x-6 gap-y-3 text-[13px] text-slate-300">
               <a href="#platform" className="hover:text-white transition-colors">Platform</a>
               <a href="#pipeline" className="hover:text-white transition-colors">Pipeline</a>
               <a href="#security" className="hover:text-white transition-colors">Security</a>
               <Link to="/privacy-policy" className="hover:text-white transition-colors">Privacy policy</Link>
+              <a
+                href="https://www.hirenestworkforce.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="hover:text-white transition-colors"
+              >
+                www.hirenestworkforce.com
+              </a>
+              <a
+                href="https://www.linkedin.com/company/hirenest-workforce-pvt-ltd/"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="HireNest Workforce on LinkedIn"
+                className="inline-flex items-center gap-1.5 hover:text-white transition-colors"
+              >
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden="true">
+                  <path d="M20.45 20.45h-3.56v-5.57c0-1.33-.03-3.04-1.85-3.04-1.86 0-2.14 1.45-2.14 2.94v5.67H9.34V9h3.41v1.56h.05c.48-.9 1.64-1.85 3.37-1.85 3.6 0 4.27 2.37 4.27 5.45v6.29zM5.34 7.43a2.06 2.06 0 1 1 0-4.12 2.06 2.06 0 0 1 0 4.12zM7.12 20.45H3.56V9h3.56v11.45zM22.22 0H1.77C.79 0 0 .77 0 1.73v20.54C0 23.23.79 24 1.77 24h20.45c.98 0 1.78-.77 1.78-1.73V1.73C24 .77 23.2 0 22.22 0z" />
+                </svg>
+                LinkedIn
+              </a>
             </nav>
           </div>
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 text-[12px] text-slate-500 font-mono">
