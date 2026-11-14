@@ -31,6 +31,7 @@ import {
   fetchAuditLogs,
 } from '../../api/admin';
 import { mapSupabaseError } from '../../lib/errors';
+import { usePersistedState } from '../../lib/usePersistedState';
 import { formatLocalDateTime } from '../../lib/format';
 import { useToast } from '../../components/ui/Toast';
 import type {
@@ -40,45 +41,68 @@ import type {
 } from '../../types/db';
 
 // 1. HQ Vendor Performance Leaderboard Page
-/** Time on platform (last 30 days) per vendor, from the presence heartbeat. */
-const VendorUsageStrip: React.FC<{ rows: AdminVendorPerformanceRow[] }> = ({ rows }) => {
-  const usageQ = useQuery({
-    queryKey: ['vendor_platform_usage'],
-    queryFn: async () => {
-      const res = await fetch('/api/presence/vendors');
-      if (!res.ok) return [] as Array<{ orgId: string; minutes: number; lastActive: string }>;
-      return ((await res.json()).vendors || []) as Array<{ orgId: string; minutes: number; lastActive: string }>;
-    },
-  });
-  const usage = usageQ.data || [];
-  if (usage.length === 0) return null;
-  const nameOf = (orgId: string) =>
-    (rows as unknown as Array<Record<string, unknown>>).find(
-      (r) => r.vendor_org_id === orgId || r.org_id === orgId
-    )?.vendor_name ?? orgId.slice(0, 8);
-  return (
-    <div className="mb-4 rounded-[8px] border border-[var(--border)] p-3">
-      <div className="text-[12px] font-medium text-[var(--text-tertiary)] mb-2">
-        Time on platform · last 30 days
-      </div>
-      <div className="flex flex-wrap gap-x-6 gap-y-1 text-[13px]">
-        {usage
-          .sort((a, b) => b.minutes - a.minutes)
-          .map((u) => (
-            <span key={u.orgId}>
-              {String(nameOf(u.orgId))}: <b>{Math.floor(u.minutes / 60)}h {u.minutes % 60}m</b>
-              <span className="text-[var(--text-tertiary)]"> · last active {u.lastActive}</span>
-            </span>
-          ))}
-      </div>
-    </div>
-  );
+type UsageRow = { orgId: string; minutes: number; lastActive: string };
+type PerfBand = 'top' | 'ontrack' | 'attention' | 'nodata' | 'pending';
+type PerfFilter = 'all' | PerfBand;
+type PerfSort = 'composite' | 'timing' | 'quality' | 'compliance' | 'name';
+
+const BAND_META: Record<PerfBand, { label: string; tone: 'emerald' | 'info' | 'amber' | 'neutral' | 'warning' }> = {
+  top: { label: 'Top performer', tone: 'emerald' },
+  ontrack: { label: 'On track', tone: 'info' },
+  attention: { label: 'Needs attention', tone: 'amber' },
+  nodata: { label: 'Not enough data', tone: 'neutral' },
+  pending: { label: 'Weights not approved', tone: 'warning' },
 };
+
+function bandOf(row: AdminVendorPerformanceRow): PerfBand {
+  const o = row.metrics?.overall;
+  if (o?.status === 'weights_not_approved') return 'pending';
+  if (!o || o.status === 'not_enough_data' || o.score === null) return 'nodata';
+  if (o.score >= 80) return 'top';
+  if (o.score >= 60) return 'ontrack';
+  return 'attention';
+}
+
+const scoreColor = (n: number) => (n < 40 ? 'var(--status-danger-dot)' : n < 70 ? '#D97706' : '#059669');
+
+const MiniBar: React.FC<{ label: string; score: number | null | undefined; note?: string }> = ({ label, score, note }) => (
+  <div>
+    <div className="flex items-center justify-between text-[12px] leading-[16px]">
+      <span className="text-[var(--text-secondary)]">{label}</span>
+      <span className="font-mono tabular-nums text-[var(--text-primary)]">
+        {score === null || score === undefined ? '—' : Math.round(score)}
+        {note && <span className="ml-1 text-[var(--text-tertiary)]">{note}</span>}
+      </span>
+    </div>
+    <div className="mt-1 h-1.5 w-full rounded-full bg-[var(--track)] overflow-hidden">
+      {score !== null && score !== undefined && (
+        <div
+          className="h-full rounded-full transition-all"
+          style={{ width: `${Math.max(2, Math.min(100, score))}%`, background: scoreColor(score) }}
+        />
+      )}
+    </div>
+  </div>
+);
+
+const KpiCard: React.FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => (
+  <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4">
+    <div className="text-[12px] font-medium text-[var(--text-tertiary)]">{label}</div>
+    <div className="mt-1 text-[26px] leading-[32px] font-semibold tabular-nums text-[var(--text-primary)]">{value}</div>
+    {hint && <div className="mt-0.5 text-[12px] text-[var(--text-tertiary)]">{hint}</div>}
+  </div>
+);
+
+const fmtMinutes = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
 
 export const HqVendorPerformancePage: React.FC = () => {
   const [page, setPage] = useState(1);
   const pageSize = 25;
   const [selectedRow, setSelectedRow] = useState<AdminVendorPerformanceRow | null>(null);
+  const [search, setSearch] = usePersistedState<string>('hn:filters:vendor-performance:search', '');
+  const [sort, setSort] = usePersistedState<PerfSort>('hn:filters:vendor-performance:sort', 'composite');
+  const [filter, setFilter] = usePersistedState<PerfFilter>('hn:filters:vendor-performance:filter', 'all');
+  const [view, setView] = usePersistedState<'cards' | 'table'>('hn:filters:vendor-performance:view', 'cards');
 
   const { data = [], isLoading, error, refetch } = useQuery({
     queryKey: ['admin_vendor_performance', page],
@@ -89,13 +113,125 @@ export const HqVendorPerformancePage: React.FC = () => {
       }),
   });
 
+  const usageQ = useQuery({
+    queryKey: ['vendor_platform_usage'],
+    queryFn: async () => {
+      const res = await fetch('/api/presence/vendors');
+      if (!res.ok) return [] as UsageRow[];
+      return ((await res.json()).vendors || []) as UsageRow[];
+    },
+  });
+  const usageByOrg = new Map((usageQ.data || []).map((u) => [u.orgId, u]));
+
+  // Rank by composite score (scored vendors first), independent of the chosen sort.
+  const ranked = [...data].sort((a, b) => (b.metrics?.overall?.score ?? -1) - (a.metrics?.overall?.score ?? -1));
+  const rankOf = new Map(ranked.map((r, i) => [r.vendor_org_id, i + 1]));
+
+  const bandCounts: Record<PerfBand, number> = { top: 0, ontrack: 0, attention: 0, nodata: 0, pending: 0 };
+  for (const r of data) bandCounts[bandOf(r)] += 1;
+  const scored = data.filter((r) => typeof r.metrics?.overall?.score === 'number');
+  const avgComposite = scored.length
+    ? Math.round(scored.reduce((n, r) => n + (r.metrics.overall.score as number), 0) / scored.length)
+    : null;
+  const slaVals = data
+    .map((r) => r.metrics?.timing?.sla_compliance_90d_pct)
+    .filter((v): v is number => typeof v === 'number');
+  const avgSla = slaVals.length ? Math.round(slaVals.reduce((n, v) => n + v, 0) / slaVals.length) : null;
+  const totalMinutes = (usageQ.data || []).reduce((n, u) => n + u.minutes, 0);
+
+  const sortValue = (r: AdminVendorPerformanceRow) => {
+    switch (sort) {
+      case 'timing': return r.metrics?.timing?.score ?? -1;
+      case 'quality': return r.metrics?.quality?.score ?? -1;
+      case 'compliance': return r.metrics?.compliance?.score ?? -1;
+      default: return r.metrics?.overall?.score ?? -1;
+    }
+  };
+  const visible = data
+    .filter((r) => (filter === 'all' || bandOf(r) === filter) && r.vendor_name.toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a, b) => (sort === 'name' ? a.vendor_name.localeCompare(b.vendor_name) : sortValue(b) - sortValue(a)));
+
+  const filterChips: Array<{ id: PerfFilter; label: string; count: number }> = [
+    { id: 'all', label: 'All vendors', count: data.length },
+    { id: 'top', label: 'Top performers', count: bandCounts.top },
+    { id: 'ontrack', label: 'On track', count: bandCounts.ontrack },
+    { id: 'attention', label: 'Needs attention', count: bandCounts.attention },
+    { id: 'nodata', label: 'Not enough data', count: bandCounts.nodata },
+  ];
+
   return (
-    <div>
+    <div className="space-y-5">
       <PageHeader
         title="Vendor performance"
-        description="Three-pillar vendor evaluation: submission timing, candidate quality, and process compliance."
+        description="Submission timing, candidate quality and process compliance for every vendor agency, ranked."
       />
-      <VendorUsageStrip rows={data} />
+
+      {!isLoading && !error && data.length > 0 && (
+        <>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KpiCard label="Vendors tracked" value={String(data.length)} hint={`${scored.length} with a composite score`} />
+            <KpiCard label="Average composite" value={avgComposite === null ? '—' : String(avgComposite)} hint="Out of 100" />
+            <KpiCard label="Average SLA (90 days)" value={avgSla === null ? '—' : `${avgSla}%`} hint="Submitted within the SLA window" />
+            <KpiCard
+              label="Time on platform"
+              value={totalMinutes ? fmtMinutes(totalMinutes) : '—'}
+              hint={bandCounts.attention ? `${bandCounts.attention} vendor(s) need attention` : 'Last 30 days, all vendors'}
+            />
+          </div>
+
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-nowrap lg:flex-wrap items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 -mx-1 px-1 lg:mx-0 lg:px-0">
+              {filterChips.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => setFilter(c.id)}
+                  className={`h-8 px-3 shrink-0 whitespace-nowrap rounded-[6px] border text-[12px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+                    filter === c.id
+                      ? 'border-[#1D5FD1] bg-[#1D5FD1] text-white'
+                      : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'
+                  }`}
+                >
+                  {c.label}
+                  <span className={`font-mono tabular-nums text-[11px] ${filter === c.id ? 'text-white/85' : 'text-[var(--text-tertiary)]'}`}>{c.count}</span>
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="w-full sm:w-52">
+                <Input placeholder="Search vendor…" value={search} onChange={(e) => setSearch(e.target.value)} />
+              </div>
+              <div className="w-full sm:w-44">
+                <Select
+                  value={sort}
+                  onChange={(e) => setSort(e.target.value as PerfSort)}
+                  options={[
+                    { value: 'composite', label: 'Sort: Composite' },
+                    { value: 'timing', label: 'Sort: Timing' },
+                    { value: 'quality', label: 'Sort: Quality' },
+                    { value: 'compliance', label: 'Sort: Compliance' },
+                    { value: 'name', label: 'Sort: Name (A–Z)' },
+                  ]}
+                />
+              </div>
+              <div className="inline-flex rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] p-0.5">
+                {(['cards', 'table'] as const).map((v) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setView(v)}
+                    className={`px-3 py-1 rounded-[4px] text-[12px] font-medium capitalize cursor-pointer ${
+                      view === v ? 'bg-[var(--surface)] text-[var(--text-primary)] shadow-2xs' : 'text-[var(--text-secondary)]'
+                    }`}
+                  >
+                    {v}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
 
       {isLoading ? (
         <TableSkeleton rows={6} cols={7} />
@@ -106,126 +242,123 @@ export const HqVendorPerformancePage: React.FC = () => {
           title="No vendor performance records yet"
           description="Approved vendor agencies appear here as requirements are shared and submissions are evaluated."
         />
+      ) : visible.length === 0 ? (
+        <EmptyState title="No vendors match these filters" description="Clear the search or pick a different group." />
+      ) : view === 'cards' ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+          {visible.map((row) => {
+            const m = row.metrics;
+            const band = bandOf(row);
+            const meta = BAND_META[band];
+            const usage = usageByOrg.get(row.vendor_org_id);
+            const composite = m?.overall?.score;
+            return (
+              <button
+                key={row.vendor_org_id}
+                type="button"
+                onClick={() => setSelectedRow(row)}
+                className="text-left min-w-0 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 hover:border-[var(--border-strong)] hover:shadow-sm transition-all cursor-pointer flex flex-col gap-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-10 w-10 shrink-0 rounded-[10px] bg-[#1D5FD1]/10 text-[#1D5FD1] flex items-center justify-center font-semibold">
+                      {row.vendor_name.trim().charAt(0).toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold text-[var(--text-primary)] break-words line-clamp-2">{row.vendor_name}</div>
+                      <div className="text-[12px] text-[var(--text-tertiary)]">Rank #{rankOf.get(row.vendor_org_id)} of {data.length}</div>
+                    </div>
+                  </div>
+                  <Badge tone={meta.tone}>{meta.label}</Badge>
+                </div>
+
+                <div className="flex items-end gap-3">
+                  <div className="text-[34px] leading-[36px] font-semibold tabular-nums text-[var(--text-primary)]">
+                    {typeof composite === 'number' ? Math.round(composite) : '—'}
+                  </div>
+                  <div className="pb-1 text-[12px] text-[var(--text-tertiary)]">composite score</div>
+                </div>
+
+                <div className="space-y-2.5">
+                  <MiniBar label="Timing" score={m?.timing?.score} />
+                  <MiniBar
+                    label="Quality"
+                    score={m?.quality?.score}
+                    note={m?.quality?.avg_rating_1_to_5 != null ? `(${m.quality.avg_rating_1_to_5}/5)` : undefined}
+                  />
+                  <MiniBar label="Compliance" score={m?.compliance?.score} />
+                </div>
+
+                <div className="mt-auto grid grid-cols-3 gap-2 border-t border-[var(--border)] pt-3 text-[12px]">
+                  <div>
+                    <div className="text-[var(--text-tertiary)]">SLA 90d</div>
+                    <div className="font-mono tabular-nums text-[var(--text-primary)]">
+                      {m?.timing?.sla_compliance_90d_pct != null ? `${m.timing.sla_compliance_90d_pct}%` : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[var(--text-tertiary)]">Resp / turnaround</div>
+                    <div className="font-mono tabular-nums text-[var(--text-primary)]">
+                      {m?.timing?.avg_response_hours != null ? `${m.timing.avg_response_hours}h` : '—'} /{' '}
+                      {m?.timing?.avg_turnaround_hours != null ? `${m.timing.avg_turnaround_hours}h` : '—'}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[var(--text-tertiary)]">On platform</div>
+                    <div className="font-mono tabular-nums text-[var(--text-primary)]">{usage ? fmtMinutes(usage.minutes) : '—'}</div>
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
       ) : (
-        <div>
-          <div className="overflow-x-auto">
-            <table>
-              <thead>
-                <tr>
-                  <th>Vendor agency</th>
-                  <th>Timing</th>
-                  <th className="text-right">Resp / turnaround</th>
-                  <th className="text-right">SLA 90d</th>
-                  <th>Quality</th>
-                  <th>Compliance</th>
-                  <th>Composite</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.map((row) => {
-                  const m = row.metrics;
-                  const minSample = m?.min_sample_size ?? 5;
-                  return (
-                    <tr
-                      key={row.vendor_org_id}
-                      onClick={() => setSelectedRow(row)}
-                      className="cursor-pointer"
-                    >
-                      <td className="font-medium text-[var(--text-primary)]">
-                        {row.vendor_name}
-                      </td>
-                      <td>
-                        {m?.timing?.status === 'not_enough_data' ||
-                        m?.timing?.score === null ? (
-                          <NotEnoughData
-                            sampleCount={m?.timing?.evaluable_shares}
-                            minSampleSize={minSample}
-                          />
-                        ) : (
-                          <ScoreBar score={m?.timing?.score} size="sm" />
-                        )}
-                      </td>
-                      <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">
-                        {m?.timing?.avg_response_hours !== null &&
-                        m?.timing?.avg_response_hours !== undefined
-                          ? `${m.timing.avg_response_hours}h`
-                          : '-'}{' '}
-                        /{' '}
-                        {m?.timing?.avg_turnaround_hours !== null &&
-                        m?.timing?.avg_turnaround_hours !== undefined
-                          ? `${m.timing.avg_turnaround_hours}h`
-                          : '-'}
-                      </td>
-                      <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">
-                        {m?.timing?.sla_compliance_90d_pct !== null &&
-                        m?.timing?.sla_compliance_90d_pct !== undefined
-                          ? `${m.timing.sla_compliance_90d_pct}%`
-                          : 'Not enough data'}
-                      </td>
-                      <td>
-                        {m?.quality?.status === 'not_enough_data' ||
-                        m?.quality?.score === null ? (
-                          <NotEnoughData
-                            sampleCount={m?.quality?.rated_submissions}
-                            minSampleSize={minSample}
-                          />
-                        ) : (
-                          <div className="flex items-center gap-2">
-                            <ScoreBar score={m?.quality?.score} size="sm" />
-                            <span className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
-                              ({m.quality.avg_rating_1_to_5 ?? '-'}/5)
-                            </span>
-                          </div>
-                        )}
-                      </td>
-                      <td>
-                        {m?.compliance?.status === 'not_enough_data' ||
-                        m?.compliance?.score === null ? (
-                          <NotEnoughData
-                            sampleCount={m?.compliance?.submissions}
-                            minSampleSize={minSample}
-                          />
-                        ) : (
-                          <ScoreBar score={m?.compliance?.score} size="sm" />
-                        )}
-                      </td>
-                      <td>
-                        {m?.overall?.status === 'weights_not_approved' ? (
-                          <Badge tone="warning">Weights not approved</Badge>
-                        ) : m?.overall?.status === 'not_enough_data' ||
-                          m?.overall?.score === null ? (
-                          <span className="text-[13px] text-[var(--text-secondary)]">
-                            Not enough data
-                          </span>
-                        ) : (
-                          <ScoreBar score={m?.overall?.score} size="sm" />
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] py-3 text-[12px] text-[var(--text-secondary)]">
-            <span className="font-mono tabular-nums">Page {page}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              Prev
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={data.length < pageSize}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              Next
-            </Button>
-          </div>
+        <div className="overflow-x-auto border-t border-[var(--border)]">
+          <table>
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>Vendor agency</th>
+                <th>Status</th>
+                <th>Timing</th>
+                <th>Quality</th>
+                <th>Compliance</th>
+                <th>Composite</th>
+                <th className="text-right">SLA 90d</th>
+                <th className="text-right">On platform</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visible.map((row) => {
+                const m = row.metrics;
+                const meta = BAND_META[bandOf(row)];
+                const usage = usageByOrg.get(row.vendor_org_id);
+                return (
+                  <tr key={row.vendor_org_id} onClick={() => setSelectedRow(row)} className="cursor-pointer">
+                    <td className="font-mono tabular-nums text-[var(--text-tertiary)]">{rankOf.get(row.vendor_org_id)}</td>
+                    <td className="font-medium text-[var(--text-primary)]">{row.vendor_name}</td>
+                    <td><Badge tone={meta.tone}>{meta.label}</Badge></td>
+                    <td><ScoreBar score={m?.timing?.score} size="sm" /></td>
+                    <td><ScoreBar score={m?.quality?.score} size="sm" /></td>
+                    <td><ScoreBar score={m?.compliance?.score} size="sm" /></td>
+                    <td><ScoreBar score={m?.overall?.score} size="sm" /></td>
+                    <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">
+                      {m?.timing?.sla_compliance_90d_pct != null ? `${m.timing.sla_compliance_90d_pct}%` : '—'}
+                    </td>
+                    <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">{usage ? fmtMinutes(usage.minutes) : '—'}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {data.length > 0 && (
+        <div className="flex items-center justify-end gap-2 border-t border-[var(--border)] py-3 text-[12px] text-[var(--text-secondary)]">
+          <span className="font-mono tabular-nums">Page {page}</span>
+          <Button size="sm" variant="ghost" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>Prev</Button>
+          <Button size="sm" variant="ghost" disabled={data.length < pageSize} onClick={() => setPage((p) => p + 1)}>Next</Button>
         </div>
       )}
 
