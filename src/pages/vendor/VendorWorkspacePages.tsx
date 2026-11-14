@@ -1280,8 +1280,8 @@ export const VendorRequirementDetailPage: React.FC = () => {
           </p>
           <p className="text-[var(--text-secondary)]">
             Please contact your HireNest account manager or reach out to{' '}
-            <a href="mailto:compliance@hirenest.in" className="underline text-blue-600">
-              compliance@hirenest.in
+            <a href="mailto:hireatkind@gmail.com" className="underline text-blue-600">
+              hireatkind@gmail.com
             </a>{' '}
             to get your NDA executed and verified. This is a one-time process.
           </p>
@@ -1292,7 +1292,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
             <Button
               size="sm"
               onClick={() => {
-                window.open('mailto:compliance@hirenest.in?subject=NDA Verification Request', '_blank');
+                window.open('mailto:hireatkind@gmail.com?subject=NDA Verification Request', '_blank');
                 setShowNdaAlert(false);
               }}
             >
@@ -2032,8 +2032,8 @@ export const VendorCandidateDetailPage: React.FC = () => {
           </p>
           <p className="text-[var(--text-secondary)]">
             Please contact your HireNest account manager or reach out to{' '}
-            <a href="mailto:compliance@hirenest.in" className="underline text-blue-600">
-              compliance@hirenest.in
+            <a href="mailto:hireatkind@gmail.com" className="underline text-blue-600">
+              hireatkind@gmail.com
             </a>{' '}
             to get your NDA executed and verified. This is a one-time process.
           </p>
@@ -2044,7 +2044,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
             <Button
               size="sm"
               onClick={() => {
-                window.open('mailto:compliance@hirenest.in?subject=NDA Verification Request', '_blank');
+                window.open('mailto:hireatkind@gmail.com?subject=NDA Verification Request', '_blank');
                 setShowNdaAlert(false);
               }}
             >
