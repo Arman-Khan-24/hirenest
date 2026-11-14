@@ -424,6 +424,8 @@ export interface AiScreeningSession {
 
 export interface PlatformSettings {
   id: number;
+  ack_weight: number;
+  ack_sla_hours: number;
   timing_weight: number;
   quality_weight: number;
   compliance_weight: number;
@@ -476,11 +478,24 @@ export interface EventOutbox {
 export interface VendorPerformanceResult {
   vendor_org_id: string;
   min_sample_size: number;
+  range?: { from: string | null; to: string | null };
+  ack?: {
+    status: 'ok' | 'not_enough_data';
+    score: number | null;
+    provisional_score: number | null;
+    evaluable_shares: number;
+    acknowledged_in_sla: number;
+    ack_sla_hours: number;
+    avg_response_hours: number | null;
+  };
   timing: {
     status: 'ok' | 'not_enough_data';
     score: number | null;
+    provisional_score?: number | null;
     evaluable_shares: number;
     sla_met: number;
+    sla_late?: number;
+    sla_missed?: number;
     sla_compliance_90d_pct: number | null;
     avg_response_hours: number | null;
     avg_turnaround_hours: number | null;
@@ -488,6 +503,7 @@ export interface VendorPerformanceResult {
   quality: {
     status: 'ok' | 'not_enough_data';
     score: number | null;
+    provisional_score?: number | null;
     rated_submissions: number;
     avg_rating_1_to_5: number | null;
     dimensions: {
@@ -503,13 +519,18 @@ export interface VendorPerformanceResult {
   compliance: {
     status: 'ok' | 'not_enough_data';
     score: number | null;
+    provisional_score?: number | null;
     submissions: number;
     compliant: number;
   };
   overall: {
     status: 'ok' | 'not_enough_data' | 'weights_not_approved';
     score: number | null;
+    pillars_scored?: number;
+    pillars_weighted?: number;
+    partial?: boolean;
     weights: {
+      ack?: number;
       timing: number;
       quality: number;
       compliance: number;
@@ -749,6 +770,8 @@ export interface DatabaseRpcContract {
   get_vendor_performance: {
     Args: {
       p_vendor_org_id: string;
+      p_from?: string | null;
+      p_to?: string | null;
     };
     Returns: VendorPerformanceResult;
   };
@@ -756,6 +779,8 @@ export interface DatabaseRpcContract {
     Args: {
       p_limit?: number;
       p_offset?: number;
+      p_from?: string | null;
+      p_to?: string | null;
     };
     Returns: AdminVendorPerformanceRow[];
   };

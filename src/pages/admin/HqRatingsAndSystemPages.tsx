@@ -44,7 +44,39 @@ import type {
 type UsageRow = { orgId: string; minutes: number; lastActive: string };
 type PerfBand = 'top' | 'ontrack' | 'attention' | 'nodata' | 'pending';
 type PerfFilter = 'all' | PerfBand;
-type PerfSort = 'composite' | 'timing' | 'quality' | 'compliance' | 'name';
+type PerfSort = 'composite' | 'ack' | 'timing' | 'quality' | 'compliance' | 'name';
+type PeriodMode = 'all' | 'month' | 'range';
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const ymd = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+
+function resolvePeriod(mode: PeriodMode, month: string, fromDate: string, toDate: string) {
+  const none = { from: null as string | null, to: null as string | null, fromDay: '2000-01-01', toDay: null as string | null, label: 'All time' };
+  if (mode === 'month' && /^\d{4}-\d{2}$/.test(month)) {
+    const [y, m] = month.split('-').map(Number);
+    const start = new Date(y, m - 1, 1);
+    const end = new Date(y, m, 1);
+    return {
+      from: start.toISOString(),
+      to: end.toISOString(),
+      fromDay: ymd(start),
+      toDay: ymd(new Date(y, m, 0)),
+      label: start.toLocaleString('en', { month: 'long', year: 'numeric' }),
+    };
+  }
+  if (mode === 'range' && (fromDate || toDate)) {
+    const start = fromDate ? new Date(`${fromDate}T00:00:00`) : null;
+    const endExclusive = toDate ? new Date(new Date(`${toDate}T00:00:00`).getTime() + 86400_000) : null;
+    return {
+      from: start ? start.toISOString() : null,
+      to: endExclusive ? endExclusive.toISOString() : null,
+      fromDay: fromDate || '2000-01-01',
+      toDay: toDate || null,
+      label: `${fromDate || 'Start'} to ${toDate || 'today'}`,
+    };
+  }
+  return none;
+}
 
 const BAND_META: Record<PerfBand, { label: string; tone: 'emerald' | 'info' | 'amber' | 'neutral' | 'warning' }> = {
   top: { label: 'Top performer', tone: 'emerald' },
@@ -65,25 +97,37 @@ function bandOf(row: AdminVendorPerformanceRow): PerfBand {
 
 const scoreColor = (n: number) => (n < 40 ? 'var(--status-danger-dot)' : n < 70 ? '#D97706' : '#059669');
 
-const MiniBar: React.FC<{ label: string; score: number | null | undefined; note?: string }> = ({ label, score, note }) => (
-  <div>
-    <div className="flex items-center justify-between text-[12px] leading-[16px]">
-      <span className="text-[var(--text-secondary)]">{label}</span>
-      <span className="font-mono tabular-nums text-[var(--text-primary)]">
-        {score === null || score === undefined ? '—' : Math.round(score)}
-        {note && <span className="ml-1 text-[var(--text-tertiary)]">{note}</span>}
-      </span>
+const MiniBar: React.FC<{
+  label: string;
+  score: number | null | undefined;
+  provisional?: number | null;
+  note?: string;
+}> = ({ label, score, provisional, note }) => {
+  const isProv = (score === null || score === undefined) && provisional !== null && provisional !== undefined;
+  const shown = isProv ? provisional : score;
+  return (
+    <div>
+      <div className="flex items-center justify-between text-[12px] leading-[16px]">
+        <span className="text-[var(--text-secondary)]">{label}</span>
+        <span className={`font-mono tabular-nums ${isProv ? 'text-[var(--text-tertiary)]' : 'text-[var(--text-primary)]'}`}>
+          {shown === null || shown === undefined ? '—' : Math.round(shown)}
+          {note && <span className="ml-1 text-[var(--text-tertiary)]">{note}</span>}
+        </span>
+      </div>
+      <div className="mt-1 h-1.5 w-full rounded-full bg-[var(--track)] overflow-hidden">
+        {shown !== null && shown !== undefined && (
+          <div
+            className="h-full rounded-full transition-all"
+            style={{
+              width: `${Math.max(2, Math.min(100, shown))}%`,
+              background: isProv ? 'var(--border-strong)' : scoreColor(shown),
+            }}
+          />
+        )}
+      </div>
     </div>
-    <div className="mt-1 h-1.5 w-full rounded-full bg-[var(--track)] overflow-hidden">
-      {score !== null && score !== undefined && (
-        <div
-          className="h-full rounded-full transition-all"
-          style={{ width: `${Math.max(2, Math.min(100, score))}%`, background: scoreColor(score) }}
-        />
-      )}
-    </div>
-  </div>
-);
+  );
+};
 
 const KpiCard: React.FC<{ label: string; value: string; hint?: string }> = ({ label, value, hint }) => (
   <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4">
@@ -104,25 +148,32 @@ export const HqVendorPerformancePage: React.FC = () => {
   const [filter, setFilter] = usePersistedState<PerfFilter>('hn:filters:vendor-performance:filter', 'all');
   const [view, setView] = usePersistedState<'cards' | 'table'>('hn:filters:vendor-performance:view', 'cards');
 
+  const [periodMode, setPeriodMode] = usePersistedState<PeriodMode>('hn:filters:vendor-performance:period', 'all');
+  const [month, setMonth] = usePersistedState<string>('hn:filters:vendor-performance:month', ymd(new Date()).slice(0, 7));
+  const [fromDate, setFromDate] = usePersistedState<string>('hn:filters:vendor-performance:from', '');
+  const [toDate, setToDate] = usePersistedState<string>('hn:filters:vendor-performance:to', '');
+  const period = resolvePeriod(periodMode, month, fromDate, toDate);
+
   const { data = [], isLoading, error, refetch } = useQuery({
-    queryKey: ['admin_vendor_performance', page],
+    queryKey: ['admin_vendor_performance', page, period.from, period.to],
     queryFn: () =>
       fetchAdminVendorPerformanceRpc({
         limit: pageSize,
         offset: (page - 1) * pageSize,
+        from: period.from,
+        to: period.to,
       }),
-    refetchInterval: 30000,
-    refetchOnWindowFocus: true,
   });
 
   const usageQ = useQuery({
-    queryKey: ['vendor_platform_usage'],
+    queryKey: ['vendor_platform_usage', period.fromDay, period.toDay],
     queryFn: async () => {
-      const res = await fetch('/api/presence/vendors');
+      const qs = new URLSearchParams({ from: period.fromDay });
+      if (period.toDay) qs.set('to', period.toDay);
+      const res = await fetch(`/api/presence/vendors?${qs.toString()}`);
       if (!res.ok) return [] as UsageRow[];
       return ((await res.json()).vendors || []) as UsageRow[];
     },
-    refetchInterval: 60000,
   });
   const usageByOrg = new Map((usageQ.data || []).map((u) => [u.orgId, u]));
 
@@ -136,15 +187,16 @@ export const HqVendorPerformancePage: React.FC = () => {
   const avgComposite = scored.length
     ? Math.round(scored.reduce((n, r) => n + (r.metrics.overall.score as number), 0) / scored.length)
     : null;
-  const slaVals = data
-    .map((r) => r.metrics?.timing?.sla_compliance_90d_pct)
-    .filter((v): v is number => typeof v === 'number');
-  const avgSla = slaVals.length ? Math.round(slaVals.reduce((n, v) => n + v, 0) / slaVals.length) : null;
+  const slaEval = data.reduce((n, r) => n + (r.metrics?.timing?.evaluable_shares ?? 0), 0);
+  const slaMet = data.reduce((n, r) => n + (r.metrics?.timing?.sla_met ?? 0), 0);
+  const avgSla = slaEval ? Math.round((100 * slaMet) / slaEval) : null;
   const totalMinutes = (usageQ.data || []).reduce((n, u) => n + u.minutes, 0);
+  const weights = data[0]?.metrics?.overall?.weights;
 
   const sortValue = (r: AdminVendorPerformanceRow) => {
     switch (sort) {
-      case 'timing': return r.metrics?.timing?.score ?? -1;
+      case 'ack': return r.metrics?.ack?.score ?? r.metrics?.ack?.provisional_score ?? -1;
+      case 'timing': return r.metrics?.timing?.score ?? r.metrics?.timing?.provisional_score ?? -1;
       case 'quality': return r.metrics?.quality?.score ?? -1;
       case 'compliance': return r.metrics?.compliance?.score ?? -1;
       default: return r.metrics?.overall?.score ?? -1;
@@ -174,30 +226,59 @@ export const HqVendorPerformancePage: React.FC = () => {
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
             <KpiCard label="Vendors tracked" value={String(data.length)} hint={`${scored.length} with a composite score`} />
             <KpiCard label="Average composite" value={avgComposite === null ? '—' : String(avgComposite)} hint="Out of 100" />
-            <KpiCard label="Average SLA (90 days)" value={avgSla === null ? '—' : `${avgSla}%`} hint="Submitted within the SLA window" />
             <KpiCard
-              label="Time on platform"
+              label="Submitted before SLA"
+              value={avgSla === null ? '—' : `${avgSla}%`}
+              hint={slaEval ? `${slaMet} of ${slaEval} shares · ${period.label}` : period.label}
+            />
+            <KpiCard
+              label="Hours on platform"
               value={totalMinutes ? fmtMinutes(totalMinutes) : '—'}
-              hint={bandCounts.attention ? `${bandCounts.attention} vendor(s) need attention` : 'Last 30 days, all vendors'}
+              hint={periodMode === 'all' ? 'All vendors, all time' : `All vendors · ${period.label}`}
             />
           </div>
 
-          {(bandCounts.pending > 0 || data.some((r) => r.metrics?.timing?.score == null)) && (
-            <div className="rounded-[10px] border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 p-3.5 text-[13px] leading-[20px] text-[var(--text-secondary)]">
-              <div className="font-medium text-[var(--text-primary)]">Why some scores are blank</div>
-              <ul className="mt-1 list-disc pl-5 space-y-0.5">
-                {bandCounts.pending > 0 && (
-                  <li>The composite score stays hidden until the score weights are approved (Settings → Score weights → Approve).</li>
-                )}
-                <li>
-                  Each pillar needs at least {data[0]?.metrics?.min_sample_size ?? 5} samples before it is scored: shares for Timing,
-                  rated submissions for Quality, submissions for Compliance. Progress is shown on each card.
-                  You can lower the minimum sample size in Settings.
-                </li>
-                <li>Data refreshes automatically every 30 seconds.</li>
-              </ul>
+          <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3.5 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="w-full sm:w-40">
+                <Select
+                  label="Period"
+                  value={periodMode}
+                  onChange={(e) => {
+                    setPeriodMode(e.target.value as PeriodMode);
+                    setPage(1);
+                  }}
+                  options={[
+                    { value: 'all', label: 'All time' },
+                    { value: 'month', label: 'Month' },
+                    { value: 'range', label: 'Date range' },
+                  ]}
+                />
+              </div>
+              {periodMode === 'month' && (
+                <div className="w-full sm:w-44">
+                  <Input label="Month" type="month" value={month} onChange={(e) => { setMonth(e.target.value); setPage(1); }} />
+                </div>
+              )}
+              {periodMode === 'range' && (
+                <>
+                  <div className="w-full sm:w-40">
+                    <Input label="From" type="date" value={fromDate} max={toDate || undefined} onChange={(e) => { setFromDate(e.target.value); setPage(1); }} />
+                  </div>
+                  <div className="w-full sm:w-40">
+                    <Input label="To" type="date" value={toDate} min={fromDate || undefined} onChange={(e) => { setToDate(e.target.value); setPage(1); }} />
+                  </div>
+                </>
+              )}
             </div>
-          )}
+            <p className="text-[12px] leading-[18px] text-[var(--text-tertiary)] lg:max-w-[460px]">
+              Ranked by composite
+              {weights
+                ? `: Acknowledgement ${weights.ack ?? 0}% · Submission timing ${weights.timing}% · Quality ${weights.quality}% · Compliance ${weights.compliance}%`
+                : ''}
+              . Showing {period.label}. A pillar is scored after {data[0]?.metrics?.min_sample_size ?? 5} samples; grey values are provisional.
+            </p>
+          </div>
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-nowrap lg:flex-wrap items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 -mx-1 px-1 lg:mx-0 lg:px-0">
@@ -227,7 +308,8 @@ export const HqVendorPerformancePage: React.FC = () => {
                   onChange={(e) => setSort(e.target.value as PerfSort)}
                   options={[
                     { value: 'composite', label: 'Sort: Composite' },
-                    { value: 'timing', label: 'Sort: Timing' },
+                    { value: 'ack', label: 'Sort: Acknowledgement' },
+                    { value: 'timing', label: 'Sort: Submission timing' },
                     { value: 'quality', label: 'Sort: Quality' },
                     { value: 'compliance', label: 'Sort: Compliance' },
                     { value: 'name', label: 'Sort: Name (A–Z)' },
@@ -254,7 +336,7 @@ export const HqVendorPerformancePage: React.FC = () => {
       )}
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={7} />
+        <TableSkeleton rows={6} cols={8} />
       ) : error ? (
         <ErrorState message={mapSupabaseError(error)} onRetry={() => refetch()} />
       ) : data.length === 0 ? (
@@ -297,26 +379,32 @@ export const HqVendorPerformancePage: React.FC = () => {
                     {typeof composite === 'number' ? Math.round(composite) : '—'}
                   </div>
                   <div className="pb-1 text-[12px] text-[var(--text-tertiary)]">
-                    {typeof composite === 'number'
-                      ? 'composite score'
-                      : band === 'pending'
-                        ? 'approve weights to see composite'
-                        : 'composite needs all 3 pillars'}
+                    {m?.overall?.partial && typeof composite === 'number'
+                      ? `composite · ${m.overall.pillars_scored}/${m.overall.pillars_weighted} pillars`
+                      : 'composite score'}
                   </div>
                 </div>
 
                 <div className="space-y-2.5">
                   <MiniBar
-                    label="Timing"
+                    label="Acknowledgement"
+                    score={m?.ack?.score}
+                    provisional={m?.ack?.provisional_score}
+                    note={m?.ack?.score == null ? `${m?.ack?.evaluable_shares ?? 0}/${m?.min_sample_size ?? 5}` : undefined}
+                  />
+                  <MiniBar
+                    label="Submission timing"
                     score={m?.timing?.score}
-                    note={m?.timing?.score == null ? `${m?.timing?.evaluable_shares ?? 0}/${m?.min_sample_size ?? 5} shares` : undefined}
+                    provisional={m?.timing?.provisional_score}
+                    note={m?.timing?.score == null ? `${m?.timing?.evaluable_shares ?? 0}/${m?.min_sample_size ?? 5}` : undefined}
                   />
                   <MiniBar
                     label="Quality"
                     score={m?.quality?.score}
+                    provisional={m?.quality?.provisional_score}
                     note={
                       m?.quality?.score == null
-                        ? `${m?.quality?.rated_submissions ?? 0}/${m?.min_sample_size ?? 5} rated`
+                        ? `${m?.quality?.rated_submissions ?? 0}/${m?.min_sample_size ?? 5}`
                         : m?.quality?.avg_rating_1_to_5 != null
                           ? `(${m.quality.avg_rating_1_to_5}/5)`
                           : undefined
@@ -325,26 +413,29 @@ export const HqVendorPerformancePage: React.FC = () => {
                   <MiniBar
                     label="Compliance"
                     score={m?.compliance?.score}
-                    note={m?.compliance?.score == null ? `${m?.compliance?.submissions ?? 0}/${m?.min_sample_size ?? 5} submissions` : undefined}
+                    provisional={m?.compliance?.provisional_score}
+                    note={m?.compliance?.score == null ? `${m?.compliance?.submissions ?? 0}/${m?.min_sample_size ?? 5}` : undefined}
                   />
                 </div>
 
                 <div className="mt-auto grid grid-cols-3 gap-2 border-t border-[var(--border)] pt-3 text-[12px]">
                   <div>
-                    <div className="text-[var(--text-tertiary)]">SLA 90d</div>
+                    <div className="text-[var(--text-tertiary)]">Before / after SLA</div>
                     <div className="font-mono tabular-nums text-[var(--text-primary)]">
-                      {m?.timing?.sla_compliance_90d_pct != null ? `${m.timing.sla_compliance_90d_pct}%` : '—'}
+                      {m?.timing?.evaluable_shares
+                        ? `${m.timing.sla_met} / ${(m.timing.sla_late ?? 0) + (m.timing.sla_missed ?? 0)}`
+                        : '—'}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[var(--text-tertiary)]">Resp / turnaround</div>
+                    <div className="text-[var(--text-tertiary)]">Ack / turnaround</div>
                     <div className="font-mono tabular-nums text-[var(--text-primary)]">
-                      {m?.timing?.avg_response_hours != null ? `${m.timing.avg_response_hours}h` : '—'} /{' '}
+                      {m?.ack?.avg_response_hours != null ? `${m.ack.avg_response_hours}h` : '—'} /{' '}
                       {m?.timing?.avg_turnaround_hours != null ? `${m.timing.avg_turnaround_hours}h` : '—'}
                     </div>
                   </div>
                   <div>
-                    <div className="text-[var(--text-tertiary)]">On platform</div>
+                    <div className="text-[var(--text-tertiary)]">Hours on platform</div>
                     <div className="font-mono tabular-nums text-[var(--text-primary)]">{usage ? fmtMinutes(usage.minutes) : '—'}</div>
                   </div>
                 </div>
@@ -360,12 +451,13 @@ export const HqVendorPerformancePage: React.FC = () => {
                 <th>#</th>
                 <th>Vendor agency</th>
                 <th>Status</th>
-                <th>Timing</th>
+                <th>Acknowledgement</th>
+                <th>Submission timing</th>
                 <th>Quality</th>
                 <th>Compliance</th>
                 <th>Composite</th>
-                <th className="text-right">SLA 90d</th>
-                <th className="text-right">On platform</th>
+                <th className="text-right">Before / after SLA</th>
+                <th className="text-right">Hours on platform</th>
               </tr>
             </thead>
             <tbody>
@@ -378,12 +470,15 @@ export const HqVendorPerformancePage: React.FC = () => {
                     <td className="font-mono tabular-nums text-[var(--text-tertiary)]">{rankOf.get(row.vendor_org_id)}</td>
                     <td className="font-medium text-[var(--text-primary)]">{row.vendor_name}</td>
                     <td><Badge tone={meta.tone}>{meta.label}</Badge></td>
+                    <td><ScoreBar score={m?.ack?.score} size="sm" /></td>
                     <td><ScoreBar score={m?.timing?.score} size="sm" /></td>
                     <td><ScoreBar score={m?.quality?.score} size="sm" /></td>
                     <td><ScoreBar score={m?.compliance?.score} size="sm" /></td>
                     <td><ScoreBar score={m?.overall?.score} size="sm" /></td>
                     <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">
-                      {m?.timing?.sla_compliance_90d_pct != null ? `${m.timing.sla_compliance_90d_pct}%` : '—'}
+                      {m?.timing?.evaluable_shares
+                        ? `${m.timing.sla_met} / ${(m.timing.sla_late ?? 0) + (m.timing.sla_missed ?? 0)}`
+                        : '—'}
                     </td>
                     <td className="text-right font-mono tabular-nums text-[var(--text-secondary)]">{usage ? fmtMinutes(usage.minutes) : '—'}</td>
                   </tr>
@@ -406,7 +501,7 @@ export const HqVendorPerformancePage: React.FC = () => {
         open={Boolean(selectedRow)}
         onClose={() => setSelectedRow(null)}
         title={selectedRow ? `${selectedRow.vendor_name}` : ''}
-        subtitle="Three-pillar metrics and 6-dimension candidate quality breakdown"
+        subtitle={`Acknowledgement, submission timing, quality and compliance · ${period.label}`}
         widthClass="max-w-[720px]"
       >
         {selectedRow && <VendorPerformancePanel performance={selectedRow.metrics} />}
@@ -881,7 +976,9 @@ export const AdminSettingsPage: React.FC = () => {
     queryFn: fetchPlatformSettings,
   });
 
-  const [timingWeight, setTimingWeight] = useState(30);
+  const [ackWeight, setAckWeight] = useState(10);
+  const [ackSlaHours, setAckSlaHours] = useState(4);
+  const [timingWeight, setTimingWeight] = useState(20);
   const [qualityWeight, setQualityWeight] = useState(50);
   const [complianceWeight, setComplianceWeight] = useState(20);
   const [weightsApproved, setWeightsApproved] = useState(false);
@@ -892,6 +989,8 @@ export const AdminSettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (settings) {
+      setAckWeight(settings.ack_weight ?? 0);
+      setAckSlaHours(settings.ack_sla_hours ?? 4);
       setTimingWeight(settings.timing_weight);
       setQualityWeight(settings.quality_weight);
       setComplianceWeight(settings.compliance_weight);
@@ -903,6 +1002,7 @@ export const AdminSettingsPage: React.FC = () => {
   }, [settings]);
 
   const weightSum =
+    Number(ackWeight || 0) +
     Number(timingWeight || 0) +
     Number(qualityWeight || 0) +
     Number(complianceWeight || 0);
@@ -913,7 +1013,7 @@ export const AdminSettingsPage: React.FC = () => {
     if (!sumValid) {
       toast({
         title: 'Invalid weights',
-        description: 'Timing, Quality, and Compliance weights must sum to 100.',
+        description: 'Acknowledgement, Submission timing, Quality and Compliance weights must sum to 100.',
         tone: 'error',
       });
       return;
@@ -921,6 +1021,8 @@ export const AdminSettingsPage: React.FC = () => {
     setSaving(true);
     try {
       await updatePlatformSettings({
+        ack_weight: Number(ackWeight),
+        ack_sla_hours: Number(ackSlaHours),
         timing_weight: Number(timingWeight),
         quality_weight: Number(qualityWeight),
         compliance_weight: Number(complianceWeight),
@@ -978,9 +1080,17 @@ export const AdminSettingsPage: React.FC = () => {
               </Badge>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Input
-                label="Timing weight (%)"
+                label="Acknowledgement weight (%)"
+                type="number"
+                min={0}
+                max={100}
+                value={ackWeight}
+                onChange={(e) => setAckWeight(Number(e.target.value))}
+              />
+              <Input
+                label="Submission timing weight (%)"
                 type="number"
                 min={0}
                 max={100}
@@ -1048,6 +1158,15 @@ export const AdminSettingsPage: React.FC = () => {
                 min={1}
                 value={defaultSlaHours}
                 onChange={(e) => setDefaultSlaHours(Number(e.target.value))}
+              />
+              <Input
+                label="Acknowledgement SLA (hours)"
+                type="number"
+                min={1}
+                max={168}
+                value={ackSlaHours}
+                onChange={(e) => setAckSlaHours(Number(e.target.value))}
+                hint="A vendor must acknowledge a shared requirement (or submit) within this time"
               />
             </div>
 

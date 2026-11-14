@@ -15,6 +15,51 @@ const QUALITY_DIMENSION_LABELS: Record<
   overall_suitability: 'Overall candidate suitability',
 };
 
+const PillarTile: React.FC<{
+  color: string;
+  title: string;
+  samples: string;
+  score: number | null;
+  provisional?: number | null;
+  rows: Array<[string, string]>;
+}> = ({ color, title, samples, score, provisional, rows }) => (
+  <div className="p-5 space-y-4 bg-[var(--surface)]">
+    <div className="flex items-center justify-between">
+      <span className="inline-flex items-center gap-2 text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
+        <span className="h-2 w-2 rounded-full shrink-0" style={{ background: color }} />
+        <span>{title}</span>
+      </span>
+      <span className="text-[12px] leading-[16px] font-mono tabular-nums text-[var(--text-tertiary)]">
+        {samples}
+      </span>
+    </div>
+    <div>
+      {score !== null ? (
+        <div className="text-[28px] leading-[36px] font-semibold tracking-[-0.01em] font-mono tabular-nums text-[var(--text-primary)]">
+          {Math.round(score)}
+        </div>
+      ) : provisional !== null && provisional !== undefined ? (
+        <div className="flex items-baseline gap-2 py-1">
+          <span className="text-[28px] leading-[36px] font-semibold font-mono tabular-nums text-[var(--text-tertiary)]">
+            {Math.round(provisional)}
+          </span>
+          <span className="text-[12px] text-[var(--text-tertiary)]">provisional</span>
+        </div>
+      ) : (
+        <div className="text-[14px] leading-[20px] text-[var(--text-secondary)] py-1">Not enough data</div>
+      )}
+    </div>
+    <div className="pt-3 border-t border-[var(--border)] space-y-1.5 text-[13px] leading-[20px]">
+      {rows.map(([label, value]) => (
+        <div key={label} className="flex justify-between gap-3">
+          <span className="text-[var(--text-secondary)]">{label}</span>
+          <span className="font-mono tabular-nums text-[var(--text-primary)] text-right">{value}</span>
+        </div>
+      ))}
+    </div>
+  </div>
+);
+
 export const VendorPerformancePanel: React.FC<{
   performance: VendorPerformanceResult;
   clientSummaryOnly?: boolean;
@@ -46,154 +91,82 @@ export const VendorPerformancePanel: React.FC<{
     );
   }
 
+  const ack = performance.ack;
+  const rangeLabel = performance.range?.from || performance.range?.to ? 'selected period' : 'all time';
+  const dash = 'Not enough data';
+  const hours = (v: number | null | undefined) => (v !== null && v !== undefined ? `${v}h` : dash);
+
   return (
     <div className="space-y-6">
-      {/* Three equal columns (Timing #1D5FD1, Quality #C98A4B, Compliance #2A9D8F) + Overall composite */}
+      <p className="text-[12px] leading-[16px] text-[var(--text-tertiary)]">
+        Showing {rangeLabel}. A score appears once a pillar has {minSample} samples; below that the
+        provisional value is shown in grey.
+      </p>
       <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] grid grid-cols-1 sm:grid-cols-2 gap-px" style={{ backgroundColor: 'var(--border)' }}>
-        {/* 1. Timing */}
-        <div className="p-5 space-y-4 bg-[var(--surface)]">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
-              <span className="h-2 w-2 rounded-full bg-[#1D5FD1] shrink-0" />
-              <span>Timing</span>
-            </span>
-            <span className="text-[12px] leading-[16px] font-mono tabular-nums text-[var(--text-tertiary)]">
-              {timing.evaluable_shares} of {minSample} samples
-            </span>
-          </div>
-          <div>
-            {timing.status === 'not_enough_data' || timing.score === null ? (
-              <div className="text-[14px] leading-[20px] text-[var(--text-secondary)] py-1">
-                Not enough data
-              </div>
-            ) : (
-              <div className="text-[28px] leading-[36px] font-semibold tracking-[-0.01em] font-mono tabular-nums text-[var(--text-primary)]">
-                {Math.round(timing.score)}
-              </div>
-            )}
-          </div>
-          <div className="pt-3 border-t border-[var(--border)] space-y-1.5 text-[13px] leading-[20px]">
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">SLA met / evaluable</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {timing.sla_met} / {timing.evaluable_shares}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">90d SLA compliance</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {timing.sla_compliance_90d_pct !== null
-                  ? `${timing.sla_compliance_90d_pct}%`
-                  : 'Not enough data'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Avg response speed</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {timing.avg_response_hours !== null
-                  ? `${timing.avg_response_hours}h`
-                  : 'Not enough data'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Avg turnaround</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {timing.avg_turnaround_hours !== null
-                  ? `${timing.avg_turnaround_hours}h`
-                  : 'Not enough data'}
-              </span>
-            </div>
-          </div>
-        </div>
+        {ack && (
+          <PillarTile
+            color="#7C3AED"
+            title="Acknowledgement"
+            samples={`${ack.evaluable_shares} of ${minSample} samples`}
+            score={ack.score}
+            provisional={ack.provisional_score}
+            rows={[
+              [`Acknowledged within ${ack.ack_sla_hours}h`, `${ack.acknowledged_in_sla} / ${ack.evaluable_shares}`],
+              ['Avg acknowledgement time', hours(ack.avg_response_hours)],
+            ]}
+          />
+        )}
+        <PillarTile
+          color="#1D5FD1"
+          title="Submission timing"
+          samples={`${timing.evaluable_shares} of ${minSample} samples`}
+          score={timing.score}
+          provisional={timing.provisional_score}
+          rows={[
+            ['Before SLA', `${timing.sla_met} / ${timing.evaluable_shares}`],
+            ['After SLA (late)', timing.sla_late !== undefined ? String(timing.sla_late) : '-'],
+            ['Never submitted (missed)', timing.sla_missed !== undefined ? String(timing.sla_missed) : '-'],
+            ['Avg turnaround', hours(timing.avg_turnaround_hours)],
+            [
+              '90d SLA compliance',
+              timing.sla_compliance_90d_pct !== null ? `${timing.sla_compliance_90d_pct}%` : dash,
+            ],
+          ]}
+        />
+        <PillarTile
+          color="#C98A4B"
+          title="Quality of profiles"
+          samples={`${quality.rated_submissions} of ${minSample} samples`}
+          score={quality.score}
+          provisional={quality.provisional_score}
+          rows={[
+            ['Rated submissions', String(quality.rated_submissions)],
+            [
+              'Avg quality (1-5)',
+              quality.avg_rating_1_to_5 !== null ? `${quality.avg_rating_1_to_5} / 5` : dash,
+            ],
+            [
+              'Avg interview (1-5)',
+              quality.avg_interview_overall_1_to_5 !== null
+                ? `${quality.avg_interview_overall_1_to_5} / 5`
+                : dash,
+            ],
+          ]}
+        />
+        <PillarTile
+          color="#2A9D8F"
+          title="Compliance"
+          samples={`${compliance.submissions} of ${minSample} samples`}
+          score={compliance.score}
+          provisional={compliance.provisional_score}
+          rows={[
+            ['Compliant submissions', `${compliance.compliant} / ${compliance.submissions}`],
+            ['Min sample threshold', String(minSample)],
+          ]}
+        />
 
-        {/* 2. Quality */}
-        <div className="p-5 space-y-4 bg-[var(--surface)]">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
-              <span className="h-2 w-2 rounded-full bg-[#C98A4B] shrink-0" />
-              <span>Quality</span>
-            </span>
-            <span className="text-[12px] leading-[16px] font-mono tabular-nums text-[var(--text-tertiary)]">
-              {quality.rated_submissions} of {minSample} samples
-            </span>
-          </div>
-          <div>
-            {quality.status === 'not_enough_data' || quality.score === null ? (
-              <div className="text-[14px] leading-[20px] text-[var(--text-secondary)] py-1">
-                Not enough data
-              </div>
-            ) : (
-              <div className="text-[28px] leading-[36px] font-semibold tracking-[-0.01em] font-mono tabular-nums text-[var(--text-primary)]">
-                {Math.round(quality.score)}
-              </div>
-            )}
-          </div>
-          <div className="pt-3 border-t border-[var(--border)] space-y-1.5 text-[13px] leading-[20px]">
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Rated submissions</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {quality.rated_submissions}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Avg quality (1–5)</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {quality.avg_rating_1_to_5 !== null
-                  ? `${quality.avg_rating_1_to_5} / 5`
-                  : 'Not enough data'}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Avg interview (1–5)</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {quality.avg_interview_overall_1_to_5 !== null
-                  ? `${quality.avg_interview_overall_1_to_5} / 5`
-                  : 'Not enough data'}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 3. Compliance */}
-        <div className="p-5 space-y-4 bg-[var(--surface)]">
-          <div className="flex items-center justify-between">
-            <span className="inline-flex items-center gap-2 text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
-              <span className="h-2 w-2 rounded-full bg-[#2A9D8F] shrink-0" />
-              <span>Compliance</span>
-            </span>
-            <span className="text-[12px] leading-[16px] font-mono tabular-nums text-[var(--text-tertiary)]">
-              {compliance.submissions} of {minSample} samples
-            </span>
-          </div>
-          <div>
-            {compliance.status === 'not_enough_data' || compliance.score === null ? (
-              <div className="text-[14px] leading-[20px] text-[var(--text-secondary)] py-1">
-                Not enough data
-              </div>
-            ) : (
-              <div className="text-[28px] leading-[36px] font-semibold tracking-[-0.01em] font-mono tabular-nums text-[var(--text-primary)]">
-                {Math.round(compliance.score)}
-              </div>
-            )}
-          </div>
-          <div className="pt-3 border-t border-[var(--border)] space-y-1.5 text-[13px] leading-[20px]">
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Compliant submissions</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {compliance.compliant} / {compliance.submissions}
-              </span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-[var(--text-secondary)]">Min sample threshold</span>
-              <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                {minSample}
-              </span>
-            </div>
-          </div>
-        </div>
-
-        {/* 4. Composite */}
-        <div className="p-5 space-y-4 bg-[var(--surface)]">
+        {/* Composite */}
+        <div className="p-5 space-y-4 bg-[var(--surface)] sm:col-span-2">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-2 text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
               <span className="h-2 w-2 rounded-full bg-[#36342E] shrink-0" />
@@ -203,6 +176,10 @@ export const VendorPerformancePanel: React.FC<{
               <Badge tone="warning">Pending approval</Badge>
             ) : overall.status === 'not_enough_data' ? (
               <Badge tone="neutral">Not enough data</Badge>
+            ) : overall.partial ? (
+              <Badge tone="neutral">
+                Partial: {overall.pillars_scored} of {overall.pillars_weighted} pillars
+              </Badge>
             ) : (
               <Badge tone="success">Approved</Badge>
             )}
@@ -225,9 +202,9 @@ export const VendorPerformancePanel: React.FC<{
           {overall.weights && (
             <div className="pt-3 border-t border-[var(--border)] space-y-1.5 text-[13px] leading-[20px]">
               <div className="flex justify-between">
-                <span className="text-[var(--text-secondary)]">Weights (T / Q / C)</span>
+                <span className="text-[var(--text-secondary)]">Weights (Ack / Submit / Quality / Compliance)</span>
                 <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                  {overall.weights.timing}% / {overall.weights.quality}% /{' '}
+                  {overall.weights.ack ?? 0}% / {overall.weights.timing}% / {overall.weights.quality}% /{' '}
                   {overall.weights.compliance}%
                 </span>
               </div>

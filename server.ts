@@ -5090,7 +5090,8 @@ Return JSON array of objects with fields: targetSkill, question.`;
     res.json({ ok: true });
   });
 
-  // Admin: vendor time-on-platform (last 30 days) grouped by organisation.
+  // Admin: vendor time-on-platform grouped by organisation. Optional ?from=YYYY-MM-DD&to=YYYY-MM-DD
+  // (both inclusive); defaults to the last 30 days.
   app.get('/api/presence/vendors', async (req, res) => {
     const auth = await authenticateStaffingCaller(req, { strict: true });
     const admin = getSupabaseAdmin();
@@ -5102,8 +5103,13 @@ Return JSON array of objects with fields: targetSkill, question.`;
       res.status(403).json({ error: 'Internal staff access required.' });
       return;
     }
-    const since = new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
-    const { data: usage } = await admin.from('platform_usage').select('user_id, day, seconds').gte('day', since);
+    const isDay = (v: unknown): v is string => typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v);
+    const since = isDay(req.query.from)
+      ? req.query.from
+      : new Date(Date.now() - 30 * 86400_000).toISOString().slice(0, 10);
+    let usageQuery = admin.from('platform_usage').select('user_id, day, seconds').gte('day', since);
+    if (isDay(req.query.to)) usageQuery = usageQuery.lte('day', req.query.to);
+    const { data: usage } = await usageQuery;
     const ids = Array.from(new Set((usage || []).map((u) => u.user_id as string)));
     const { data: profs } = ids.length
       ? await admin.from('profiles').select('id, org_id, role').in('id', ids)

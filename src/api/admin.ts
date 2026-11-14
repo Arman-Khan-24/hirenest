@@ -218,6 +218,8 @@ export async function updatePlatformSettings(
   payload: Partial<
     Pick<
       PlatformSettings,
+      | 'ack_weight'
+      | 'ack_sla_hours'
       | 'timing_weight'
       | 'quality_weight'
       | 'compliance_weight'

@@ -232,10 +232,13 @@ export async function fetchRatingDisputes(params: {
 }
 
 export async function getVendorPerformanceRpc(
-  vendorOrgId: string
+  vendorOrgId: string,
+  range?: { from?: string | null; to?: string | null }
 ): Promise<VendorPerformanceResult> {
   const { data, error } = await supabase.rpc('get_vendor_performance', {
     p_vendor_org_id: vendorOrgId,
+    ...(range?.from ? { p_from: range.from } : {}),
+    ...(range?.to ? { p_to: range.to } : {}),
   });
   if (error) throw error;
   return data as VendorPerformanceResult;
@@ -244,10 +247,14 @@ export async function getVendorPerformanceRpc(
 export async function fetchAdminVendorPerformanceRpc(params: {
   limit?: number;
   offset?: number;
+  from?: string | null;
+  to?: string | null;
 }): Promise<AdminVendorPerformanceRow[]> {
   const { data, error } = await supabase.rpc('admin_vendor_performance', {
     p_limit: params.limit ?? DEFAULT_PAGE_SIZE,
     p_offset: params.offset ?? 0,
+    ...(params.from ? { p_from: params.from } : {}),
+    ...(params.to ? { p_to: params.to } : {}),
   });
   if (error) throw error;
   return (data || []) as AdminVendorPerformanceRow[];
