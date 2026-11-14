@@ -91,7 +91,7 @@ export const PipelineQuickFilterBar: React.FC<{
   counts?: Partial<Record<PipelineQuickFilter, number>>;
 }> = ({ activeFilter, onChange, counts }) => {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
+    <div className="flex flex-nowrap sm:flex-wrap items-center gap-1.5 overflow-x-auto sm:overflow-visible pb-1 sm:pb-0 -mx-1 px-1 sm:mx-0 sm:px-0">
       {PIPELINE_FILTER_OPTIONS.map((opt) => {
         const isActive = activeFilter === opt.id;
         const Icon = opt.icon;
@@ -101,7 +101,7 @@ export const PipelineQuickFilterBar: React.FC<{
             key={opt.id}
             type="button"
             onClick={() => onChange(opt.id)}
-            className={`h-7 px-2.5 rounded-[6px] border text-[12px] leading-[16px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
+            className={`h-8 sm:h-7 px-3 sm:px-2.5 shrink-0 whitespace-nowrap rounded-[6px] border text-[12px] leading-[16px] font-medium inline-flex items-center gap-1.5 transition-colors cursor-pointer ${
               isActive
                 ? 'border-[#1D5FD1] bg-[#1D5FD1] text-white shadow-2xs'
                 : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)] hover:text-[var(--text-primary)]'
@@ -243,10 +243,10 @@ export const RequirementsPipelineGrid: React.FC<{
               <div
                 key={req.id}
                 onClick={() => onSelectRequirement(req)}
-                className="group rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-5 hover:border-[var(--border-strong)] transition-all cursor-pointer flex flex-col justify-between gap-4"
+                className="group min-w-0 overflow-hidden rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 hover:border-[var(--border-strong)] transition-all cursor-pointer flex flex-col justify-between gap-4"
               >
                 {/* Card Top Header */}
-                <div className="flex items-start justify-between gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
                     {onToggleSelect && (
                       <input
@@ -262,7 +262,7 @@ export const RequirementsPipelineGrid: React.FC<{
                     </div>
                     <div className="min-w-0">
                       <RequirementRibbon requirement={req} />
-                      <h3 className="text-[14px] leading-[20px] font-bold uppercase tracking-[-0.01em] text-[var(--text-primary)] truncate">
+                      <h3 className="text-[14px] leading-[20px] font-bold uppercase tracking-[-0.01em] text-[var(--text-primary)] break-words line-clamp-2 sm:line-clamp-none sm:truncate">
                         {req.title}
                       </h3>
                       <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] leading-[16px]">
@@ -286,7 +286,7 @@ export const RequirementsPipelineGrid: React.FC<{
                   </div>
 
                   {/* Top-Right Status & Distribution Pills */}
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex flex-wrap items-center gap-1.5 sm:shrink-0">
                     <Badge tone={statusBadge.tone}>{statusBadge.label}</Badge>
                     <span
                       className={`inline-flex items-center rounded-[6px] border px-2 py-0.5 font-mono text-[10px] leading-[14px] font-semibold uppercase tracking-[0.03em] ${
@@ -301,8 +301,8 @@ export const RequirementsPipelineGrid: React.FC<{
                 </div>
 
                 {/* Card Bottom Metadata Bar */}
-                <div className="pt-3.5 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-5 text-[12px] leading-[16px] font-semibold uppercase tracking-[0.02em] text-[var(--text-secondary)]">
+                <div className="pt-3.5 border-t border-[var(--border)] flex flex-col sm:flex-row sm:flex-wrap sm:items-center sm:justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-x-4 gap-y-2 sm:gap-5 text-[12px] leading-[16px] font-semibold uppercase tracking-[0.02em] text-[var(--text-secondary)]">
                     <span className="inline-flex items-center gap-1.5 font-mono tabular-nums">
                       <Clock className="h-3 w-3 text-[var(--text-tertiary)]" />
                       {expText}
@@ -320,7 +320,7 @@ export const RequirementsPipelineGrid: React.FC<{
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex flex-wrap items-center gap-2 sm:shrink-0">
                     {share?.due_at && <SlaBadge dueAt={share.due_at} />}
                     {share && !share.acknowledged_at && (
                       <Badge tone="warning">Ack needed</Badge>

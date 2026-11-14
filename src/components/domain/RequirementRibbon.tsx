@@ -32,7 +32,7 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
     borderRadius: '3px 0 0 3px',
   } as const;
   return (
-    <span className={`inline-flex flex-wrap items-center gap-1 ${className}`}>
+    <span className={`inline-flex max-w-full flex-wrap items-center gap-1 ${className}`}>
       <span
         title={isIt ? 'IT requirement' : 'Non-IT requirement'}
         className={base}
@@ -48,13 +48,14 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
       {profile && (
         <span
           title={profile === 'bench' ? 'Bench profile requirement' : 'Market profile requirement'}
-          className={base}
+          className={`${base} req-ribbon-wave`}
           style={{
-            ...shape,
+            borderRadius: '3px 0 0 3px',
             background:
               profile === 'bench'
-                ? 'linear-gradient(90deg, #047857, #10B981)'
-                : 'linear-gradient(90deg, #6D28D9, #8B5CF6)',
+                ? 'linear-gradient(90deg, #047857, #34D399, #047857)'
+                : 'linear-gradient(90deg, #6D28D9, #A78BFA, #6D28D9)',
+            backgroundSize: '200% 100%',
           }}
         >
           {profile === 'bench' ? 'Bench profile' : 'Market profile'}
