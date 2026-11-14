@@ -4,7 +4,7 @@ import type { AppRole, MarginType, Requirement, RequirementFinancials, Requireme
 // UPDATE 1 & UPDATE 2: Requirement Client Mapping & LPA/LPM Budget Schema
 // ============================================================================
 
-export type BudgetUnit = 'LPA' | 'LPM';
+export type BudgetUnit = 'LPA' | 'LPM' | 'HOURLY';
 export type BudgetMode = 'range' | 'fixed';
 
 export interface RequirementSoftDeleteMeta {
@@ -407,6 +407,12 @@ export const BUDGET_UNIT_METADATA: Record<
     fullLabel: 'Lakhs per month',
     shortSuffix: 'LPM',
   },
+  HOURLY: {
+    code: 'HOURLY',
+    selectorLabel: 'Hourly rate',
+    fullLabel: 'Rupees per hour',
+    shortSuffix: '/ hr',
+  },
 };
 
 /**
@@ -545,7 +551,7 @@ export function parseRequirementMeta(
 
   const unitRaw = kv.unit?.toUpperCase();
   const budgetUnit: BudgetUnit | null =
-    unitRaw === 'LPA' || unitRaw === 'LPM' ? unitRaw : null;
+    unitRaw === 'LPA' || unitRaw === 'LPM' || unitRaw === 'HOURLY' ? unitRaw : null;
 
   const budgetMode: BudgetMode = kv.mode === 'fixed' ? 'fixed' : 'range';
 
@@ -634,8 +640,8 @@ export function validateBudgetValues(params: {
   budgetMax?: number | null;
 }): { valid: boolean; error?: string } {
   const { budgetMode, budgetUnit, budgetMin, budgetMax } = params;
-  if (budgetUnit !== 'LPA' && budgetUnit !== 'LPM') {
-    return { valid: false, error: 'Select a valid budget unit (LPA or LPM).' };
+  if (budgetUnit !== 'LPA' && budgetUnit !== 'LPM' && budgetUnit !== 'HOURLY') {
+    return { valid: false, error: 'Select a valid budget unit (LPA, LPM or Hourly rate).' };
   }
 
   const hasMin = budgetMin !== null && budgetMin !== undefined && !Number.isNaN(budgetMin);
@@ -685,12 +691,13 @@ export function formatBudgetDisplay(params: {
   budgetMin: number | null;
   budgetMax: number | null;
   baseCurrency?: string;
+  workingDaysPerMonth?: number | null;
 }): {
   formatted: string;
   subtitle: string | null;
   unit: BudgetUnit | null;
 } {
-  const { budgetMode, budgetUnit, budgetMin, budgetMax, baseCurrency = 'INR' } = params;
+  const { budgetMode, budgetUnit, budgetMin, budgetMax, baseCurrency = 'INR', workingDaysPerMonth } = params;
   const symbol = baseCurrency.toUpperCase() === 'USD' ? '$' : '₹';
 
   // Legacy record without LPA/LPM unit: render standard currency without assuming/converting unit
@@ -718,6 +725,26 @@ export function formatBudgetDisplay(params: {
   const unitInfo = BUDGET_UNIT_METADATA[budgetUnit];
   const hasMin = budgetMin !== null && budgetMin !== undefined && !Number.isNaN(budgetMin);
   const hasMax = budgetMax !== null && budgetMax !== undefined && !Number.isNaN(budgetMax);
+
+  // Hourly: "₹1200–1500 / hr", with the working days and an approximate monthly figure (8 hrs/day).
+  if (budgetUnit === 'HOURLY') {
+    const lo = hasMin ? budgetMin! : budgetMax!;
+    const hi = hasMax ? budgetMax! : budgetMin!;
+    if (lo === undefined || lo === null) return { formatted: '-', subtitle: unitInfo.fullLabel, unit: budgetUnit };
+    const single = budgetMode === 'fixed' || lo === hi;
+    const formatted = single
+      ? `${symbol}${formatCleanNumber(hi)} ${unitInfo.shortSuffix}`
+      : `${symbol}${formatCleanNumber(lo)}–${formatCleanNumber(hi)} ${unitInfo.shortSuffix}`;
+    let subtitle = unitInfo.fullLabel;
+    if (workingDaysPerMonth && workingDaysPerMonth > 0) {
+      const monthly = (n: number) => {
+        const m = n * 8 * workingDaysPerMonth;
+        return m >= 100000 ? `${symbol}${(m / 100000).toFixed(2)} L` : `${symbol}${Math.round(m).toLocaleString('en-IN')}`;
+      };
+      subtitle = `${workingDaysPerMonth} working days/month · ≈ ${single ? monthly(hi) : `${monthly(lo)}–${monthly(hi)}`} per month (8 hrs/day)`;
+    }
+    return { formatted, subtitle, unit: budgetUnit };
+  }
 
   if (!hasMin && !hasMax) {
     return { formatted: '-', subtitle: unitInfo.fullLabel, unit: budgetUnit };

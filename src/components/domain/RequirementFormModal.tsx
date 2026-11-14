@@ -122,11 +122,6 @@ export const RequirementFormModal: React.FC<{
   const [profileType, setProfileType] = useState<'' | 'bench' | 'market'>(
     initialMeta.profileType || ''
   );
-  const [hourlyRateInput, setHourlyRateInput] = useState<string>(
-    initialMeta.hourlyRate !== null && initialMeta.hourlyRate !== undefined
-      ? String(initialMeta.hourlyRate)
-      : ''
-  );
   const [workingDaysInput, setWorkingDaysInput] = useState<string>(
     initialMeta.workingDaysPerMonth !== null && initialMeta.workingDaysPerMonth !== undefined
       ? String(initialMeta.workingDaysPerMonth)
@@ -247,7 +242,6 @@ export const RequirementFormModal: React.FC<{
     setGoodToHave(parsed.goodToHaveSkills || []);
     setCategoryChoice(parsed.category ?? null);
     setProfileType(parsed.profileType || '');
-    setHourlyRateInput(parsed.hourlyRate != null ? String(parsed.hourlyRate) : '');
     setWorkingDaysInput(parsed.workingDaysPerMonth != null ? String(parsed.workingDaysPerMonth) : '');
     setOpeningsInput(String(initialRequirement?.openings ?? 1));
     setSlaHoursInput(String(initialRequirement?.submission_sla_hours ?? defaultSlaHours));
@@ -466,6 +460,13 @@ export const RequirementFormModal: React.FC<{
       setBudgetError(budgetCheck.error || 'Invalid budget range.');
       return;
     }
+    if (budgetUnit === 'HOURLY') {
+      const d = Number(workingDaysInput);
+      if (!workingDaysInput.trim() || !Number.isFinite(d) || d < 1 || d > 31) {
+        setBudgetError('Enter the number of working days per month (1-31) for an hourly rate.');
+        return;
+      }
+    }
     if (parsedInternalBudgetNum !== null && parsedInternalBudgetNum < 0) {
       setBudgetError('Internal client budget must be a positive number.');
       return;
@@ -500,9 +501,11 @@ export const RequirementFormModal: React.FC<{
         goodToHaveSkills: goodToHave,
         category: effectiveCategory,
         profileType: profileType || null,
-        hourlyRate: hourlyRateInput.trim() !== '' && Number.isFinite(Number(hourlyRateInput)) ? Number(hourlyRateInput) : null,
+        hourlyRate: null,
         workingDaysPerMonth:
-          workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput)) ? Number(workingDaysInput) : null,
+          budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
+            ? Number(workingDaysInput)
+            : null,
       });
 
       let savedReq: Requirement & { wasDuplicatePrevented?: boolean };
@@ -953,18 +956,6 @@ export const RequirementFormModal: React.FC<{
           />
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <Input
-            label="Working days per month (optional)"
-            type="number"
-            min="1"
-            max="31"
-            placeholder="e.g. 22"
-            value={workingDaysInput}
-            onChange={(e) => setWorkingDaysInput(e.target.value)}
-          />
-        </div>
-
         {/* Budget Unit Selection (LPA - annual / LPM - monthly) & Financial Governance */}
         <div className="pt-3 border-t border-[var(--border)] space-y-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1009,8 +1000,8 @@ export const RequirementFormModal: React.FC<{
             <label className="block text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
               Budget unit
             </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
-              {(['LPA', 'LPM'] as const).map((unitCode) => {
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {(['LPA', 'LPM', 'HOURLY'] as const).map((unitCode) => {
                 const info = BUDGET_UNIT_METADATA[unitCode];
                 const active = budgetUnit === unitCode;
                 return (
@@ -1036,18 +1027,26 @@ export const RequirementFormModal: React.FC<{
                   </button>
                 );
               })}
-              <div className="col-span-2 sm:col-span-1">
-                <Input
-                  label="Hourly rate (per hour)"
-                  type="number"
-                  min="0"
-                  step="any"
-                  placeholder="e.g. 1200"
-                  value={hourlyRateInput}
-                  onChange={(e) => setHourlyRateInput(e.target.value)}
-                />
-              </div>
             </div>
+            {budgetUnit === 'HOURLY' && (
+              <div className="mt-2.5 rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3">
+                <Input
+                  label="Working days per month"
+                  type="number"
+                  min="1"
+                  max="31"
+                  placeholder="e.g. 22"
+                  value={workingDaysInput}
+                  onChange={(e) => {
+                    setWorkingDaysInput(e.target.value);
+                    setBudgetError(null);
+                  }}
+                />
+                <p className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                  Used to show the approximate monthly cost of the hourly rate (8 hours per day).
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Minimum / Maximum Budget + Preview Only */}
@@ -1055,11 +1054,11 @@ export const RequirementFormModal: React.FC<{
             {budgetMode === 'range' ? (
               <>
                 <Input
-                  label={`Minimum budget (${budgetUnit})`}
+                  label={`Minimum budget (${budgetUnit === 'HOURLY' ? '₹ per hour' : budgetUnit})`}
                   type="number"
                   step="0.1"
                   min="0"
-                  placeholder={budgetUnit === 'LPA' ? 'e.g. 12' : 'e.g. 1.2'}
+                  placeholder={budgetUnit === 'LPA' ? 'e.g. 12' : budgetUnit === 'HOURLY' ? 'e.g. 1200' : 'e.g. 1.2'}
                   value={budgetMinInput}
                   onChange={(e) => {
                     setBudgetMinInput(e.target.value);
@@ -1067,11 +1066,11 @@ export const RequirementFormModal: React.FC<{
                   }}
                 />
                 <Input
-                  label={`Maximum budget (${budgetUnit})`}
+                  label={`Maximum budget (${budgetUnit === 'HOURLY' ? '₹ per hour' : budgetUnit})`}
                   type="number"
                   step="0.1"
                   min="0"
-                  placeholder={budgetUnit === 'LPA' ? 'e.g. 15' : 'e.g. 1.8'}
+                  placeholder={budgetUnit === 'LPA' ? 'e.g. 15' : budgetUnit === 'HOURLY' ? 'e.g. 1500' : 'e.g. 1.8'}
                   value={budgetMaxInput}
                   onChange={(e) => {
                     setBudgetMaxInput(e.target.value);
@@ -1082,11 +1081,11 @@ export const RequirementFormModal: React.FC<{
             ) : (
               <div className="sm:col-span-2">
                 <Input
-                  label={`Fixed budget (${budgetUnit})`}
+                  label={`Fixed budget (${budgetUnit === 'HOURLY' ? '₹ per hour' : budgetUnit})`}
                   type="number"
                   step="0.1"
                   min="0"
-                  placeholder={budgetUnit === 'LPA' ? 'e.g. 14' : 'e.g. 1.5'}
+                  placeholder={budgetUnit === 'LPA' ? 'e.g. 14' : budgetUnit === 'HOURLY' ? 'e.g. 1300' : 'e.g. 1.5'}
                   value={budgetMinInput}
                   onChange={(e) => {
                     setBudgetMinInput(e.target.value);

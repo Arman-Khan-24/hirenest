@@ -116,7 +116,7 @@ export function formatRequirementBudgetWithSubtitle(
 ): {
   formatted: string;
   subtitle: string | null;
-  unit: 'LPA' | 'LPM' | null;
+  unit: 'LPA' | 'LPM' | 'HOURLY' | null;
   isClientMapped: boolean;
   mappedClientOrgId: string | null;
 } {
@@ -133,6 +133,7 @@ export function formatRequirementBudgetWithSubtitle(
     budgetMin: meta.budgetMin,
     budgetMax: meta.budgetMax,
     baseCurrency: meta.baseCurrency,
+    workingDaysPerMonth: meta.workingDaysPerMonth,
   });
   return {
     formatted: display.formatted,

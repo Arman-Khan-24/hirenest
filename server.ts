@@ -127,7 +127,7 @@ export interface RequirementMappingServerRecord {
   requirementId: string;
   isClientMapped: boolean;
   mappedClientOrgId: string | null;
-  budgetUnit: 'LPA' | 'LPM' | null;
+  budgetUnit: 'LPA' | 'LPM' | 'HOURLY' | null;
   budgetMode: 'range' | 'fixed';
   budgetMin: number | null;
   budgetMax: number | null;
@@ -1898,7 +1898,7 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
       requirementId,
       isClientMapped: Boolean(isClientMapped),
       mappedClientOrgId: isClientMapped ? mappedClientOrgId || null : null,
-      budgetUnit: budgetUnit === 'LPA' || budgetUnit === 'LPM' ? budgetUnit : null,
+      budgetUnit: budgetUnit === 'LPA' || budgetUnit === 'LPM' || budgetUnit === 'HOURLY' ? budgetUnit : null,
       budgetMode: budgetMode === 'fixed' ? 'fixed' : 'range',
       budgetMin: typeof budgetMin === 'number' ? budgetMin : null,
       budgetMax: typeof budgetMax === 'number' ? budgetMax : null,
