@@ -111,6 +111,8 @@ export const HqVendorPerformancePage: React.FC = () => {
         limit: pageSize,
         offset: (page - 1) * pageSize,
       }),
+    refetchInterval: 30000,
+    refetchOnWindowFocus: true,
   });
 
   const usageQ = useQuery({
@@ -120,6 +122,7 @@ export const HqVendorPerformancePage: React.FC = () => {
       if (!res.ok) return [] as UsageRow[];
       return ((await res.json()).vendors || []) as UsageRow[];
     },
+    refetchInterval: 60000,
   });
   const usageByOrg = new Map((usageQ.data || []).map((u) => [u.orgId, u]));
 
@@ -178,6 +181,23 @@ export const HqVendorPerformancePage: React.FC = () => {
               hint={bandCounts.attention ? `${bandCounts.attention} vendor(s) need attention` : 'Last 30 days, all vendors'}
             />
           </div>
+
+          {(bandCounts.pending > 0 || data.some((r) => r.metrics?.timing?.score == null)) && (
+            <div className="rounded-[10px] border border-[var(--status-warning)]/40 bg-[var(--status-warning)]/10 p-3.5 text-[13px] leading-[20px] text-[var(--text-secondary)]">
+              <div className="font-medium text-[var(--text-primary)]">Why some scores are blank</div>
+              <ul className="mt-1 list-disc pl-5 space-y-0.5">
+                {bandCounts.pending > 0 && (
+                  <li>The composite score stays hidden until the score weights are approved (Settings → Score weights → Approve).</li>
+                )}
+                <li>
+                  Each pillar needs at least {data[0]?.metrics?.min_sample_size ?? 5} samples before it is scored: shares for Timing,
+                  rated submissions for Quality, submissions for Compliance. Progress is shown on each card.
+                  You can lower the minimum sample size in Settings.
+                </li>
+                <li>Data refreshes automatically every 30 seconds.</li>
+              </ul>
+            </div>
+          )}
 
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="flex flex-nowrap lg:flex-wrap items-center gap-1.5 overflow-x-auto pb-1 lg:pb-0 -mx-1 px-1 lg:mx-0 lg:px-0">
@@ -276,17 +296,37 @@ export const HqVendorPerformancePage: React.FC = () => {
                   <div className="text-[34px] leading-[36px] font-semibold tabular-nums text-[var(--text-primary)]">
                     {typeof composite === 'number' ? Math.round(composite) : '—'}
                   </div>
-                  <div className="pb-1 text-[12px] text-[var(--text-tertiary)]">composite score</div>
+                  <div className="pb-1 text-[12px] text-[var(--text-tertiary)]">
+                    {typeof composite === 'number'
+                      ? 'composite score'
+                      : band === 'pending'
+                        ? 'approve weights to see composite'
+                        : 'composite needs all 3 pillars'}
+                  </div>
                 </div>
 
                 <div className="space-y-2.5">
-                  <MiniBar label="Timing" score={m?.timing?.score} />
+                  <MiniBar
+                    label="Timing"
+                    score={m?.timing?.score}
+                    note={m?.timing?.score == null ? `${m?.timing?.evaluable_shares ?? 0}/${m?.min_sample_size ?? 5} shares` : undefined}
+                  />
                   <MiniBar
                     label="Quality"
                     score={m?.quality?.score}
-                    note={m?.quality?.avg_rating_1_to_5 != null ? `(${m.quality.avg_rating_1_to_5}/5)` : undefined}
+                    note={
+                      m?.quality?.score == null
+                        ? `${m?.quality?.rated_submissions ?? 0}/${m?.min_sample_size ?? 5} rated`
+                        : m?.quality?.avg_rating_1_to_5 != null
+                          ? `(${m.quality.avg_rating_1_to_5}/5)`
+                          : undefined
+                    }
                   />
-                  <MiniBar label="Compliance" score={m?.compliance?.score} />
+                  <MiniBar
+                    label="Compliance"
+                    score={m?.compliance?.score}
+                    note={m?.compliance?.score == null ? `${m?.compliance?.submissions ?? 0}/${m?.min_sample_size ?? 5} submissions` : undefined}
+                  />
                 </div>
 
                 <div className="mt-auto grid grid-cols-3 gap-2 border-t border-[var(--border)] pt-3 text-[12px]">
