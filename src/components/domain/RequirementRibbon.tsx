@@ -25,7 +25,7 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
   const isIt = category === 'it';
   const profile = profileTypeOf(requirement);
   const base =
-    'inline-flex items-center h-[18px] pl-2 pr-3 mb-1 text-[10px] font-semibold uppercase tracking-[0.08em] text-white';
+    'inline-flex items-center h-[18px] pl-2 pr-3 mb-1 whitespace-nowrap shrink-0 text-[10px] leading-[18px] font-semibold uppercase tracking-[0.08em] text-white';
   const shape = {
     // ribbon notch on the right edge
     clipPath: 'polygon(0 0, 100% 0, calc(100% - 6px) 50%, 100% 100%, 0 100%)',

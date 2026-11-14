@@ -245,6 +245,11 @@ export const RequirementsPipelineGrid: React.FC<{
                 onClick={() => onSelectRequirement(req)}
                 className="group min-w-0 overflow-hidden rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4 sm:p-5 hover:border-[var(--border-strong)] transition-all cursor-pointer flex flex-col justify-between gap-4"
               >
+                {/* Ribbon row: category + Bench/Market profile, always on its own line above the content */}
+                <div className="-mt-1 -mb-2 flex flex-wrap items-center gap-1">
+                  <RequirementRibbon requirement={req} />
+                </div>
+
                 {/* Card Top Header */}
                 <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
@@ -261,7 +266,6 @@ export const RequirementsPipelineGrid: React.FC<{
                       <Briefcase className="h-4 w-4" strokeWidth={1.75} />
                     </div>
                     <div className="min-w-0">
-                      <RequirementRibbon requirement={req} />
                       <h3 className="text-[14px] leading-[20px] font-bold uppercase tracking-[-0.01em] text-[var(--text-primary)] break-words line-clamp-2 sm:line-clamp-none sm:truncate">
                         {req.title}
                       </h3>
