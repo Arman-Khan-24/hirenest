@@ -15,7 +15,7 @@ returns table (
          r.employment_type, r.openings,
          split_part(r.currency, '|', 1)
            || coalesce('|cat=' || substring(r.currency from '\|cat=(it|non_it)'), '')
-           || coalesce('|pt=' || substring(r.currency from '\|pt=(bench|market)'), '') as currency,
+           || coalesce('|pt=' || substring(r.currency from '\|pt=(bench|market|both)'), '') as currency,
          'CL-' || upper(left(replace(r.client_org_id::text, '-', ''), 6)) as client_org_name,
          coalesce(r.opened_at, r.created_at) as posted_at
     from public.requirements r
@@ -38,7 +38,7 @@ returns table (
          coalesce(r.opened_at, r.created_at) as posted_at,
          split_part(r.currency, '|', 1)
            || coalesce('|cat=' || substring(r.currency from '\|cat=(it|non_it)'), '')
-           || coalesce('|pt=' || substring(r.currency from '\|pt=(bench|market)'), '') as currency
+           || coalesce('|pt=' || substring(r.currency from '\|pt=(bench|market|both)'), '') as currency
     from public.requirements r
    where r.status = 'open' and r.is_public = true
    order by coalesce(r.opened_at, r.created_at) desc

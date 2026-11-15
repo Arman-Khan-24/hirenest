@@ -1194,7 +1194,7 @@ function sanitizePublicCurrency(raw: unknown): string {
   const str = String(raw || 'INR');
   const base = str.split('|')[0].trim() || 'INR';
   const cat = /\|cat=(it|non_it)(?:\||$)/.exec(str);
-  const pt = /\|pt=(bench|market)(?:\||$)/.exec(str);
+  const pt = /\|pt=(bench|market|both)(?:\||$)/.exec(str);
   return base + (cat ? `|cat=${cat[1]}` : '') + (pt ? `|pt=${pt[1]}` : '');
 }
 

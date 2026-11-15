@@ -11,9 +11,10 @@ type Props = {
   className?: string;
 };
 
-function profileTypeOf(requirement: Props['requirement']): 'bench' | 'market' | null {
-  const m = /\|pt=(bench|market)(?:\||$)/.exec(String(requirement.currency || ''));
-  return m ? (m[1] as 'bench' | 'market') : null;
+function profilesOf(requirement: Props['requirement']): Array<'bench' | 'market'> {
+  const m = /\|pt=(bench|market|both)(?:\||$)/.exec(String(requirement.currency || ''));
+  if (!m) return [];
+  return m[1] === 'both' ? ['bench', 'market'] : [m[1] as 'bench' | 'market'];
 }
 
 /**
@@ -23,7 +24,7 @@ function profileTypeOf(requirement: Props['requirement']): 'bench' | 'market' | 
 export function RequirementRibbon({ requirement, className = '' }: Props) {
   const category = classifyRequirement(requirement);
   const isIt = category === 'it';
-  const profile = profileTypeOf(requirement);
+  const profiles = profilesOf(requirement);
   const base =
     'inline-flex items-center h-[18px] pl-2 pr-3 mb-1 whitespace-nowrap shrink-0 text-[10px] leading-[18px] font-semibold uppercase tracking-[0.08em] text-white';
   const shape = {
@@ -45,8 +46,9 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
       >
         {REQUIREMENT_CATEGORY_LABEL[category]}
       </span>
-      {profile && (
+      {profiles.map((profile) => (
         <span
+          key={profile}
           title={profile === 'bench' ? 'Bench profile requirement' : 'Market profile requirement'}
           className={`${base} req-ribbon-wave`}
           style={{
@@ -60,7 +62,7 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
         >
           {profile === 'bench' ? 'Bench profile' : 'Market profile'}
         </span>
-      )}
+      ))}
     </span>
   );
 }

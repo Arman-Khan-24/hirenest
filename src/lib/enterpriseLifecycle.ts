@@ -15,6 +15,8 @@ export interface RequirementSoftDeleteMeta {
   deleteReason?: string | null;
 }
 
+export type RequirementProfileType = 'bench' | 'market' | 'both';
+
 export interface RequirementExtendedMeta {
   baseCurrency: string;
   budgetUnit: BudgetUnit | null; // null for legacy records that predate LPA/LPM
@@ -33,7 +35,7 @@ export interface RequirementExtendedMeta {
   category?: 'it' | 'non_it' | null;
   hourlyRate?: number | null;
   workingDaysPerMonth?: number | null;
-  profileType?: 'bench' | 'market' | null;
+  profileType?: RequirementProfileType | null;
 }
 
 export interface RequirementExtras {
@@ -41,7 +43,7 @@ export interface RequirementExtras {
   category?: 'it' | 'non_it' | null;
   hourlyRate?: number | null;
   workingDaysPerMonth?: number | null;
-  profileType?: 'bench' | 'market' | null;
+  profileType?: RequirementProfileType | null;
 }
 
 export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras {
@@ -451,7 +453,7 @@ export function encodeRequirementMetaToCurrency(params: {
 
   let encoded = `${base}|unit=${unit}|mode=${mode}|min=${minStr}|max=${maxStr}|map=${mapFlag}:${mapOrg}`;
   if (params.category === 'it' || params.category === 'non_it') encoded += `|cat=${params.category}`;
-  if (params.profileType === 'bench' || params.profileType === 'market') encoded += `|pt=${params.profileType}`;
+  if (params.profileType === 'bench' || params.profileType === 'market' || params.profileType === 'both') encoded += `|pt=${params.profileType}`;
   if (params.hourlyRate !== null && params.hourlyRate !== undefined && Number.isFinite(params.hourlyRate)) {
     encoded += `|rate=${params.hourlyRate}`;
   }
@@ -613,7 +615,7 @@ export function parseRequirementMeta(
     canonicalId,
     goodToHaveSkills,
     category: kv.cat === 'it' || kv.cat === 'non_it' ? kv.cat : null,
-    profileType: kv.pt === 'bench' || kv.pt === 'market' ? kv.pt : null,
+    profileType: kv.pt === 'bench' || kv.pt === 'market' || kv.pt === 'both' ? kv.pt : null,
     hourlyRate: numOrNull(kv.rate),
     workingDaysPerMonth: numOrNull(kv.days),
   };

@@ -24,6 +24,7 @@ import { suggestSkillsFromJd, improveJdWording } from '../../api/ai';
 import {
   type BudgetMode,
   type BudgetUnit,
+  type RequirementProfileType,
   BUDGET_UNIT_METADATA,
   encodeRequirementMetaToCurrency,
   extrasFromMeta,
@@ -119,7 +120,7 @@ export const RequirementFormModal: React.FC<{
   const [categoryChoice, setCategoryChoice] = useState<'it' | 'non_it' | null>(
     initialMeta.category ?? null
   );
-  const [profileType, setProfileType] = useState<'' | 'bench' | 'market'>(
+  const [profileType, setProfileType] = useState<'' | RequirementProfileType>(
     initialMeta.profileType || ''
   );
   const [workingDaysInput, setWorkingDaysInput] = useState<string>(
@@ -824,11 +825,12 @@ export const RequirementFormModal: React.FC<{
             <Select
               label="Profile type"
               value={profileType}
-              onChange={(e) => setProfileType(e.target.value as '' | 'bench' | 'market')}
+              onChange={(e) => setProfileType(e.target.value as '' | RequirementProfileType)}
               options={[
                 { value: '', label: 'Not specified' },
                 { value: 'bench', label: 'Bench profile' },
                 { value: 'market', label: 'Market profile' },
+                { value: 'both', label: 'Both (Bench & Market)' },
               ]}
             />
           </div>
