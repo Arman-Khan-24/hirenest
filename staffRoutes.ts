@@ -526,26 +526,42 @@ export function registerStaffRoutes(app: express.Express, deps: Deps): void {
     }
     const redirectTo = `${process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com'}/reset-password`;
     let sent = false;
+    const reasons: string[] = [];
     // 1) Normal invite (re-sends for users who never confirmed).
     const inv = await admin.auth.admin.inviteUserByEmail(prof.email, {
       data: { full_name: prof.full_name, signup_intent: 'staff' },
       redirectTo,
     });
     if (!inv.error) sent = true;
-    // 2) Fallback: generate a one-time link and email it ourselves via Resend.
+    else reasons.push(`invite: ${inv.error.message}`);
+    // 2) Existing auth users cannot be re-invited; send Supabase's own recovery email instead.
+    if (!sent) {
+      const rec = await admin.auth.resetPasswordForEmail(prof.email, { redirectTo });
+      if (!rec.error) sent = true;
+      else reasons.push(`recovery email: ${rec.error.message}`);
+    }
+    // 3) Last resort: generate a one-time link and email it ourselves via Resend.
     if (!sent) {
       const link = await admin.auth.admin.generateLink({ type: 'recovery', email: prof.email, options: { redirectTo } });
       const actionLink = link.data?.properties?.action_link;
-      if (actionLink) {
+      if (!actionLink) {
+        reasons.push(`link: ${link.error?.message || 'no link returned'}`);
+      } else if (!process.env.RESEND_API_KEY) {
+        reasons.push('Resend is not configured (RESEND_API_KEY missing)');
+      } else {
         sent = await sendEmail(
           [prof.email],
           'Activate your HireNestOS account',
           `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and activate your HireNestOS account.</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 22px;background:#1F4CC4;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#667085">If you did not expect this, ignore this email.</p>`
         );
+        if (!sent) reasons.push('Resend rejected the email (check the sender domain is verified)');
       }
     }
     if (!sent) {
-      res.status(400).json({ error: 'Could not re-send the invitation. Check Supabase SMTP / Resend settings, or ask the user to use "Forgot password" on the sign-in page.' });
+      console.error('[resend-invite] failed:', reasons.join(' | '));
+      res.status(400).json({
+        error: `Could not re-send the invitation (${reasons.join('; ')}). Check Supabase SMTP / Resend settings, or ask the user to use "Forgot password" on the sign-in page.`,
+      });
       return;
     }
     await audit(admin, { actorId: caller.userId, actorRole: caller.staffRole, targetUserId: targetId, action: 'invite_resent' });

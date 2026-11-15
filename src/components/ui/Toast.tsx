@@ -33,7 +33,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
       setItems((prev) => [...prev, { id, title, description, tone }]);
       window.setTimeout(() => {
         setItems((prev) => prev.filter((item) => item.id !== id));
-      }, 4000);
+      }, tone === 'error' ? 9000 : 4000);
     },
     []
   );
@@ -61,11 +61,11 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
             <div
               key={item.id}
               style={{ boxShadow: 'var(--shadow-floating)' }}
-              className="pointer-events-auto relative flex items-center justify-between gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] pl-4 pr-3.5 py-2.5 text-[13px] leading-[20px] overflow-hidden transition-opacity duration-150"
+              className="pointer-events-auto relative flex items-start justify-between gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] pl-4 pr-3.5 py-2.5 text-[13px] leading-[20px] overflow-hidden transition-opacity duration-150"
             >
               {/* 4px semantic colour bar on the left */}
               <span className={`absolute inset-y-0 left-0 w-1 ${barColor}`} />
-              <div className="min-w-0 truncate">
+              <div className="min-w-0 break-words">
                 <span
                   className={
                     item.tone === 'error'

@@ -26,8 +26,10 @@ export async function sendEmail(to: string[], subject: string, html: string): Pr
         html,
       }),
     });
+    if (!res.ok) console.warn('[sendEmail] Resend rejected the message:', res.status, (await res.text()).slice(0, 200));
     return res.ok;
-  } catch {
+  } catch (e) {
+    console.warn('[sendEmail] Resend request failed:', e instanceof Error ? e.message : e);
     return false;
   }
 }
