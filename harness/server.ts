@@ -85,7 +85,7 @@ registerAiInterviewRoutes(app, {
     return JSON.stringify({ transcript: audible ? TRANSCRIPTS[ti++ % TRANSCRIPTS.length] : '', audible, clarity: 4, fluency: 4, structure: 4, vocabulary_grammar: 4, professional_tone: 5, filler_words: 1, notes: 'Clear and well organised.' });
   },
   getResumeText: async () => 'Priya Sharma. Led Databricks migration at Contoso. Built Delta pipelines.',
-  sendEmail: async () => ({ ok: true }),
+  sendEmail: async (to, subject, html) => { console.log('EMAIL to=' + to.join(',') + ' subject=' + subject + ' hasCTA=' + /Create your account/.test(html)); return { ok: true }; },
   appBaseUrl: () => 'http://localhost:5199',
   cronSecret: () => undefined,
 });
