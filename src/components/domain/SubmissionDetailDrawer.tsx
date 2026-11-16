@@ -83,6 +83,8 @@ import {
 import { mapSupabaseError } from '../../lib/errors';
 import { useAuth } from '../../auth/AuthProvider';
 import { AiInterviewPanel } from './AiInterviewPanel';
+import { ScreeningScorecard } from './ScreeningScorecard';
+import { aiInterviewApi } from '../../api/aiInterviews';
 import { useToast } from '../ui/Toast';
 import type { AppRole, Interview, SubmissionStage } from '../../types/db';
 
@@ -125,6 +127,7 @@ export const SubmissionDetailDrawer: React.FC<{
     | 'match_summary'
     | 'validation_interview'
     | 'ai_interview'
+    | 'screening'
     | 'followup'
     | 'decision_gate'
     | 'pipeline_history'
@@ -169,6 +172,14 @@ export const SubmissionDetailDrawer: React.FC<{
     queryKey: ['submission_history', submissionId],
     queryFn: () => fetchSubmissionStageHistory(submissionId!),
     enabled: Boolean(submissionId),
+  });
+
+  // Clients only ever receive scorecards HQ has shared; the server enforces this.
+  const { data: sharedScorecards = [] } = useQuery({
+    queryKey: ['ai_scorecards', submissionId, 'client'],
+    queryFn: () => aiInterviewApi.scorecards(submissionId!),
+    enabled: Boolean(submissionId) && isClient,
+    retry: false,
   });
 
   const { data: interviewsData } = useQuery({
@@ -1115,6 +1126,14 @@ export const SubmissionDetailDrawer: React.FC<{
                     },
                   ]
                 : []),
+              ...(isClient && sharedScorecards.length > 0
+                ? [
+                    {
+                      id: 'screening',
+                      label: 'Screening scorecard',
+                    },
+                  ]
+                : []),
               {
                 id: 'followup',
                 label:
@@ -1143,6 +1162,7 @@ export const SubmissionDetailDrawer: React.FC<{
                   | 'match_summary'
                   | 'validation_interview'
                   | 'ai_interview'
+                  | 'screening'
                   | 'followup'
                   | 'decision_gate'
                   | 'pipeline_history'
@@ -1786,6 +1806,16 @@ export const SubmissionDetailDrawer: React.FC<{
           )}
 
           {/* TAB 3: SOURCE-SPECIFIC FOLLOW-UP (VENDOR ROUTE VS DIRECT CANDIDATE ROUTE) */}
+          {activeTab === 'screening' && isClient && (
+            <div className="space-y-4">
+              {sharedScorecards.map((card) => (
+                <div key={card.sessionId} className="overflow-x-auto">
+                  <ScreeningScorecard card={card} />
+                </div>
+              ))}
+            </div>
+          )}
+
           {activeTab === 'ai_interview' && isHq && submissionId && (
             <AiInterviewPanel
               submissionId={submissionId}

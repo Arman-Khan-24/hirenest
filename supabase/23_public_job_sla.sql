@@ -28,3 +28,30 @@ returns table (
 $$;
 
 grant execute on function public.get_public_requirement(text) to anon, authenticated;
+
+-- The jobs list also needs the Bench / Market / Both flag. The deployed function's
+-- return type can differ from this one, so it is dropped first. (Re-running 19 is not required.)
+drop function if exists public.list_public_requirements(int, int);
+create function public.list_public_requirements(
+  p_limit int default 50, p_offset int default 0)
+returns table (
+  id uuid, slug text, title text, location text,
+  work_mode text, employment_type text,
+  min_experience numeric(4,1), max_experience numeric(4,1),
+  client_org_name text, posted_at timestamptz, currency text
+) language sql stable security definer set search_path = '' as $$
+  select r.id, r.slug, r.title, r.location, r.work_mode, r.employment_type,
+         r.min_experience, r.max_experience,
+         'CL-' || upper(left(replace(r.client_org_id::text, '-', ''), 6)) as client_org_name,
+         coalesce(r.opened_at, r.created_at) as posted_at,
+         split_part(r.currency, '|', 1)
+           || coalesce('|cat=' || substring(r.currency from '\|cat=(it|non_it)'), '')
+           || coalesce('|pt=' || substring(r.currency from '\|pt=(bench|market|both)'), '') as currency
+    from public.requirements r
+   where r.status = 'open' and r.is_public = true
+   order by coalesce(r.opened_at, r.created_at) desc
+   limit greatest(1, least(coalesce(p_limit, 50), 200))
+   offset greatest(0, coalesce(p_offset, 0));
+$$;
+
+grant execute on function public.list_public_requirements(int, int) to anon, authenticated;

@@ -1755,12 +1755,15 @@ export const VendorCandidateDetailPage: React.FC = () => {
                               <span className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)] w-6">
                                 #{idx + 1}
                               </span>
-                              <Link
-                                to={`/vendor/requirements/${m.requirement_id}`}
-                                className="text-[14px] font-medium text-[var(--text-primary)] hover:underline truncate"
-                              >
-                                {m.requirements?.title || m.requirement_id}
-                              </Link>
+                              <div className="min-w-0">
+                                {m.requirements && <RequirementRibbon requirement={m.requirements} />}
+                                <Link
+                                  to={`/vendor/requirements/${m.requirement_id}`}
+                                  className="block text-[14px] font-medium text-[var(--text-primary)] hover:underline truncate"
+                                >
+                                  {m.requirements?.title || m.requirement_id}
+                                </Link>
+                              </div>
                               <span className="text-[13px] text-[var(--text-secondary)]">
                                 {m.requirements?.location || '-'} ({m.requirements?.work_mode || '-'})
                               </span>
@@ -1877,7 +1880,8 @@ export const VendorCandidateDetailPage: React.FC = () => {
                         className="cursor-pointer"
                       >
                         <td className="font-medium text-[var(--text-primary)]">
-                          {sub.requirements?.title || sub.requirement_id}
+                          {sub.requirements && <RequirementRibbon requirement={sub.requirements} />}
+                          <div>{sub.requirements?.title || sub.requirement_id}</div>
                         </td>
                         <td>
                           <StageBadge stage={sub.stage} />

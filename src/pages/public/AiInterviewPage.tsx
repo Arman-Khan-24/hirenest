@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, Clock, Loader2, Send, ShieldCheck, Sparkles } from 'lucide-react';
+import { DeviceCheck, VoiceInterviewRoom } from '../../components/domain/VoiceInterview';
+import { stopStream } from '../../lib/interviewMedia';
 import { PublicInterviewError, publicInterviewApi, type PublicInterviewView } from '../../api/aiInterviews';
 
 const MAX_CHARS = 4000;
@@ -65,6 +67,10 @@ export const AiInterviewPage: React.FC = () => {
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [confirmFinish, setConfirmFinish] = useState(false);
+  const [stream, setStream] = useState<MediaStream | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const resumed = useRef(false);
+  const finalized = useRef(false);
 
   const shownAt = useRef<number>(Date.now());
   const pasted = useRef(false);
@@ -102,13 +108,34 @@ export const AiInterviewPage: React.FC = () => {
     let alive = true;
     publicInterviewApi
       .load(token)
-      .then((v) => alive && applyView(v))
+      .then((v) => {
+        if (!alive) return;
+        resumed.current = v.status === 'in_progress';
+        applyView(v);
+      })
       .catch((e) => alive && handleFailure(e))
       .finally(() => alive && setLoading(false));
     return () => {
       alive = false;
     };
   }, [token, applyView, handleFailure]);
+
+  const changeStream = useCallback((next: MediaStream | null) => {
+    if (streamRef.current && streamRef.current !== next) stopStream(streamRef.current);
+    streamRef.current = next;
+    setStream(next);
+  }, []);
+
+  // Release the camera when leaving, and when the interview is over.
+  useEffect(() => () => stopStream(streamRef.current), []);
+  useEffect(() => {
+    if (view?.status !== 'completed') return;
+    changeStream(null);
+    if (view.mode === 'voice_video' && !finalized.current) {
+      finalized.current = true;
+      void publicInterviewApi.finalize(token).catch(() => undefined);
+    }
+  }, [view?.status, view?.mode, token, changeStream]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -200,7 +227,8 @@ export const AiInterviewPage: React.FC = () => {
     );
   }
 
-  const minutes = Math.round(view.maxQuestions * 2.5);
+  const voice = view.mode === 'voice_video';
+  const minutes = Math.round(view.maxQuestions * (voice ? 3 : 2.5));
 
   if (view.status === 'completed') {
     return (
@@ -220,14 +248,15 @@ export const AiInterviewPage: React.FC = () => {
         <main className="mx-auto w-full max-w-2xl flex-1 px-4 py-8 sm:px-6">
           <div className="rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-5 sm:p-7">
             <div className="flex items-center gap-2 text-[12px] font-medium text-[var(--accent)]">
-              <Sparkles className="h-4 w-4" aria-hidden /> Written interview
+              <Sparkles className="h-4 w-4" aria-hidden /> {voice ? 'Recorded video interview' : 'Written interview'}
             </div>
             <h1 className="mt-2 text-[22px] font-semibold leading-[28px] tracking-[-0.01em]">
               Hi {view.candidateFirstName}, welcome to your interview for {view.roleTitle}
             </h1>
             <p className="mt-2 text-[14px] leading-[22px] text-[var(--text-secondary)]">
-              You will answer {view.maxQuestions} short questions in writing, about {minutes} minutes in total. Take your time,
-              use your own words, and give real examples where you can. You can come back to this link if you get interrupted.
+              {voice
+                ? `You will answer ${view.maxQuestions} short questions out loud on camera, about ${minutes} minutes in total. Each question is read to you; then you record your answer. Find a quiet, well-lit place, use your own words and give real examples.`
+                : `You will answer ${view.maxQuestions} short questions in writing, about ${minutes} minutes in total. Take your time, use your own words, and give real examples where you can. You can come back to this link if you get interrupted.`}
             </p>
 
             <div className="mt-5 rounded-[10px] border border-[var(--border)] bg-[var(--bg-subtle)] p-4">
@@ -236,10 +265,24 @@ export const AiInterviewPage: React.FC = () => {
               </div>
               <ul className="mt-2 list-disc space-y-1.5 pl-5 text-[13px] leading-[20px] text-[var(--text-secondary)]">
                 <li>An AI assistant asks the questions. It only helps; a human recruiter reviews your answers and makes every decision.</li>
-                <li>We store your answers, how long each took, and whether text was pasted, and share them with HireNest and the hiring team for this role.</li>
+                {voice ? (
+                  <>
+                    <li>Your camera and microphone are <strong>required and recorded</strong>. Recordings are kept for 90 days, then deleted, and reviewed by HireNest recruiters (who may also observe live).</li>
+                    <li>AI transcribes your answers and rates your spoken communication (clarity, fluency, structure, vocabulary, tone). Accent is not scored. A recruiter reviews everything and makes every decision.</li>
+                    <li>Please stay on this page. Switching tabs or windows, and pasting text, are recorded and shown to the recruiter.</li>
+                    <li>A summary scorecard of this screening round may be shared with the hiring client.</li>
+                  </>
+                ) : (
+                  <li>We store your answers, how long each took, and whether text was pasted, and share them with HireNest and the hiring team for this role.</li>
+                )}
                 <li>Please do not include sensitive personal details such as ID numbers, bank details or health information.</li>
                 <li>You can stop at any time. Contact info@hirenestworkforce.com for any question about your data.</li>
               </ul>
+              {voice && (
+                <div className="mt-4 border-t border-[var(--border)] pt-4">
+                  <DeviceCheck stream={stream} onStream={changeStream} />
+                </div>
+              )}
               <label className="mt-4 flex cursor-pointer items-start gap-2.5 text-[13px] font-medium">
                 <input
                   type="checkbox"
@@ -259,11 +302,11 @@ export const AiInterviewPage: React.FC = () => {
             <button
               type="button"
               onClick={start}
-              disabled={!consent || starting}
+              disabled={!consent || starting || (voice && !stream)}
               className="mt-5 inline-flex h-11 w-full items-center justify-center gap-2 rounded-[10px] bg-[var(--primary-bg)] px-5 text-[14px] font-semibold text-white transition-colors hover:bg-[var(--primary-hover)] disabled:cursor-not-allowed disabled:opacity-50 sm:w-auto"
             >
               {starting && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
-              {starting ? 'Preparing your first question…' : 'Start interview'}
+              {starting ? 'Preparing your first question…' : voice && !stream ? 'Enable camera and microphone to start' : 'Start interview'}
             </button>
           </div>
         </main>
@@ -271,7 +314,36 @@ export const AiInterviewPage: React.FC = () => {
     );
   }
 
-  // in progress
+  // in progress (spoken interview)
+  if (voice) {
+    const vp = Math.min(100, Math.round((view.answered / view.maxQuestions) * 100));
+    return (
+      <Shell subtitle={view.roleTitle}>
+        <div className="border-b border-[var(--border)] bg-[var(--surface)]">
+          <div className="mx-auto max-w-3xl px-4 py-2.5 sm:px-6">
+            <div className="flex items-center justify-between text-[12px] text-[var(--text-secondary)]">
+              <span className="font-medium text-[var(--text-primary)]">Recorded interview</span>
+              <span>{vp}% complete</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-[var(--track)]" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={vp}>
+              <div className="h-full rounded-full bg-[var(--primary-bg)] transition-all" style={{ width: `${vp}%` }} />
+            </div>
+          </div>
+        </div>
+        <VoiceInterviewRoom
+          token={token}
+          view={view}
+          stream={stream}
+          resumed={resumed.current}
+          onStream={changeStream}
+          onView={applyView}
+          onFatal={handleFailure}
+        />
+      </Shell>
+    );
+  }
+
+  // in progress (written interview)
   const current = view.current;
   const progress = Math.min(100, Math.round((view.answered / view.maxQuestions) * 100));
   const tooLong = answer.length > MAX_CHARS;

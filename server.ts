@@ -5175,8 +5175,37 @@ Return JSON array of objects with fields: targetSkill, question.`;
     },
     getAi: getGenAIClient,
     generate: generateWithFallback,
+    analyzeAudio: async ({ system, prompt, audio, schema }) => {
+      const ai = getGenAIClient();
+      if (!ai) throw new Error('AI_UNAVAILABLE');
+      let lastErr: unknown = null;
+      for (const model of ['gemini-2.5-flash', 'gemini-2.5-flash-lite']) {
+        try {
+          const response = await ai.models.generateContent({
+            model,
+            contents: [{ role: 'user', parts: [{ inlineData: { mimeType: audio.mime, data: audio.base64 } }, { text: prompt }] }],
+            config: { systemInstruction: system, responseMimeType: 'application/json', responseSchema: schema },
+          });
+          if (response.text) return response.text;
+        } catch (err) {
+          lastErr = err;
+        }
+      }
+      throw lastErr || new Error('AI_UNAVAILABLE');
+    },
+    getResumeText: async (resumePath) => {
+      const admin = getSupabaseAdmin();
+      if (!admin) return null;
+      const { data, error } = await admin.storage.from('resumes').download(resumePath);
+      if (error || !data) return null;
+      const buf = Buffer.from(await data.arrayBuffer());
+      if (buf.length > 8 * 1024 * 1024) return null;
+      const text = extractTextFromResumeBuffer(buf, resumePath);
+      return text && text.trim().length > 40 ? text : null;
+    },
     sendEmail: sendEmailResult,
     appBaseUrl: () => process.env.APP_BASE_URL || process.env.APP_URL || 'https://os.hirenestworkforce.com',
+    cronSecret: () => process.env.CRON_SECRET,
   });
 
   // List all Deal Rooms the caller can access

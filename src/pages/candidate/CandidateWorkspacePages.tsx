@@ -934,7 +934,8 @@ export const CandidateApplicationsPage: React.FC = () => {
                     className="cursor-pointer"
                   >
                     <td className="font-medium text-[var(--text-primary)]">
-                      {sub.requirements?.title || 'Job'}
+                      {sub.requirements && <RequirementRibbon requirement={sub.requirements} />}
+                      <div>{sub.requirements?.title || 'Job'}</div>
                     </td>
                     <td>
                       <StageBadge stage={sub.stage} candidateView />
