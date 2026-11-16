@@ -82,6 +82,7 @@ import {
 } from '../../lib/offerOnboarding';
 import { mapSupabaseError } from '../../lib/errors';
 import { useAuth } from '../../auth/AuthProvider';
+import { AiInterviewPanel } from './AiInterviewPanel';
 import { useToast } from '../ui/Toast';
 import type { AppRole, Interview, SubmissionStage } from '../../types/db';
 
@@ -121,7 +122,12 @@ export const SubmissionDetailDrawer: React.FC<{
   const isCandidate = role === 'candidate';
 
   const [activeTab, setActiveTab] = useState<
-    'match_summary' | 'validation_interview' | 'followup' | 'decision_gate' | 'pipeline_history'
+    | 'match_summary'
+    | 'validation_interview'
+    | 'ai_interview'
+    | 'followup'
+    | 'decision_gate'
+    | 'pipeline_history'
   >('match_summary');
 
   const [targetStage, setTargetStage] = useState<SubmissionStage | null>(null);
@@ -1101,6 +1107,14 @@ export const SubmissionDetailDrawer: React.FC<{
                     },
                   ]
                 : []),
+              ...(isHq
+                ? [
+                    {
+                      id: 'ai_interview',
+                      label: 'AI Interview',
+                    },
+                  ]
+                : []),
               {
                 id: 'followup',
                 label:
@@ -1128,6 +1142,7 @@ export const SubmissionDetailDrawer: React.FC<{
                 t as
                   | 'match_summary'
                   | 'validation_interview'
+                  | 'ai_interview'
                   | 'followup'
                   | 'decision_gate'
                   | 'pipeline_history'
@@ -1771,6 +1786,13 @@ export const SubmissionDetailDrawer: React.FC<{
           )}
 
           {/* TAB 3: SOURCE-SPECIFIC FOLLOW-UP (VENDOR ROUTE VS DIRECT CANDIDATE ROUTE) */}
+          {activeTab === 'ai_interview' && isHq && submissionId && (
+            <AiInterviewPanel
+              submissionId={submissionId}
+              candidateName={submission.candidates?.full_name || 'The candidate'}
+            />
+          )}
+
           {activeTab === 'followup' && (
             <div className="space-y-5">
               {/* Source & Ownership Routing Header */}

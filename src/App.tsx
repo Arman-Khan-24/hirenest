@@ -7,6 +7,7 @@ import { ToastProvider } from './components/ui/Toast';
 import { AppShell } from './layouts/AppShell';
 import { PublicJobPage } from './pages/public/PublicJobPage';
 import { PublicJobsListPage } from './pages/public/PublicJobsListPage';
+import { AiInterviewPage } from './pages/public/AiInterviewPage';
 import { WelcomePage } from './pages/welcome/WelcomePage';
 import { LandingPage } from './pages/welcome/LandingPage';
 import { PrivacyPolicyPage } from './pages/welcome/PrivacyPolicyPage';
@@ -193,6 +194,7 @@ function AppRoutes() {
       {/* Public / Auth Screens */}
       <Route path="/landing" element={<LandingPage />} />
       <Route path="/privacy-policy" element={<PrivacyPolicyPage />} />
+      <Route path="/ai-interview/:token" element={<AiInterviewPage />} />
       <Route path="/welcome" element={<WelcomePage />} />
       <Route path="/signin" element={<SignInPage />} />
       <Route path="/signup" element={<SignUpPage />} />

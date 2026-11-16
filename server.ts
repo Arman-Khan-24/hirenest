@@ -25,7 +25,8 @@ import {
 import { extractStructuredFieldsFromText } from './src/lib/resumeParser';
 import { registerStaffRoutes, registerStaffEnforcement } from './staffRoutes';
 import { registerVendorTeamRoutes } from './vendorTeamRoutes';
-import { runReusableCandidateAlerts, runSlaAlerts, runSlaAutoClose, runMorningDigest, runComplianceAlerts } from './alertsEngine';
+import { registerAiInterviewRoutes, createSupabaseStore } from './aiInterviewRoutes';
+import { sendEmailResult, runReusableCandidateAlerts, runSlaAlerts, runSlaAutoClose, runMorningDigest, runComplianceAlerts } from './alertsEngine';
 import {
   type PrivacyNoticeRecord,
   type PrivacyAcknowledgementRecord,
@@ -5166,6 +5167,17 @@ Return JSON array of objects with fields: targetSkill, question.`;
   // User & Team Management (RBAC) — server-enforced
   registerStaffRoutes(app, { authenticate: authenticateStaffingCaller, getAdmin: getSupabaseAdmin });
   registerVendorTeamRoutes(app, { authenticate: authenticateStaffingCaller, getAdmin: getSupabaseAdmin });
+  registerAiInterviewRoutes(app, {
+    authenticate: authenticateStaffingCaller,
+    getStore: () => {
+      const admin = getSupabaseAdmin();
+      return admin ? createSupabaseStore(admin) : null;
+    },
+    getAi: getGenAIClient,
+    generate: generateWithFallback,
+    sendEmail: sendEmailResult,
+    appBaseUrl: () => process.env.APP_BASE_URL || process.env.APP_URL || 'https://os.hirenestworkforce.com',
+  });
 
   // List all Deal Rooms the caller can access
   app.get('/api/deal-rooms', async (req, res) => {
