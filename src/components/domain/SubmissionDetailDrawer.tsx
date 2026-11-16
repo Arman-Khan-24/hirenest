@@ -178,7 +178,7 @@ export const SubmissionDetailDrawer: React.FC<{
   const { data: sharedScorecards = [] } = useQuery({
     queryKey: ['ai_scorecards', submissionId, 'client'],
     queryFn: () => aiInterviewApi.scorecards(submissionId!),
-    enabled: Boolean(submissionId) && isClient,
+    enabled: Boolean(submissionId) && (isClient || isVendor),
     retry: false,
   });
 
@@ -1126,7 +1126,7 @@ export const SubmissionDetailDrawer: React.FC<{
                     },
                   ]
                 : []),
-              ...(isClient && sharedScorecards.length > 0
+              ...((isClient || isVendor) && sharedScorecards.length > 0
                 ? [
                     {
                       id: 'screening',
@@ -1806,7 +1806,7 @@ export const SubmissionDetailDrawer: React.FC<{
           )}
 
           {/* TAB 3: SOURCE-SPECIFIC FOLLOW-UP (VENDOR ROUTE VS DIRECT CANDIDATE ROUTE) */}
-          {activeTab === 'screening' && isClient && (
+          {activeTab === 'screening' && (isClient || isVendor) && (
             <div className="space-y-4">
               {sharedScorecards.map((card) => (
                 <div key={card.sessionId} className="overflow-x-auto">

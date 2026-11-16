@@ -13,6 +13,7 @@ import { registerAiInterviewRoutes, type AiInterviewDeps } from '../aiInterviewR
 import type { SessionStore } from '../aiInterviewStore';
 import {
   aggregateVoice,
+  buildCandidateReport,
   buildEvalPrompt,
   buildQuestionPrompt,
   buildScorecard,
@@ -24,6 +25,7 @@ import {
   hashToken,
   integritySummary,
   isPlausibleToken,
+  maskEmail,
   newToken,
   parseEvaluation,
   parseQuestion,
@@ -48,7 +50,7 @@ function ok(cond: unknown, label: string, extra?: unknown) {
 }
 const section = (t: string) => console.log(`\n== ${t}`);
 
-import { CLIENT_ORG, SUB_ID, baseCtx, memoryStore, mkSc } from './ai-interview-test-kit';
+import { CLIENT_ORG, SUB_ID, VENDOR_ORG, baseCtx, memoryStore, mkSc } from './ai-interview-test-kit';
 
 type Stub = { questions: number; evals: number; audio: number; prompts: string[]; voiceEvalHadVoice: boolean };
 const newStub = (): Stub => ({ questions: 0, evals: 0, audio: 0, prompts: [], voiceEvalHadVoice: false });
@@ -143,6 +145,12 @@ async function unitTests() {
   const ev = parseEvaluation(JSON.stringify({ summary: 's', skill_rating: 9, communication_rating: 0, overall_rating: 'x', recommendation: 'maybe', skill_evidence: [{ skill: 'A', level: 'wow', evidence: 'e' }, { skill: '' }], strengths: ['a'], gaps: ['g'], follow_ups: [], concerns: [] }));
   ok(ev.skill_rating === 5 && ev.communication_rating === 1 && ev.overall_rating === 3 && ev.recommendation === 'hold', 'ratings clamped, unknown recommendation -> hold', ev);
   ok(ev.client_feedback.summary === 's' && ev.client_feedback.strengths[0] === 'a' && ev.client_feedback.areas_to_probe[0] === 'g', 'client feedback falls back to the internal summary when the model omits it');
+
+  const evCf = parseEvaluation(JSON.stringify({ summary: 's', skill_rating: 4, communication_rating: 4, overall_rating: 4, recommendation: 'advance', skill_evidence: [], strengths: ['a'], gaps: ['g'], follow_ups: [], concerns: ['secret concern'], candidate_feedback: { summary: 'Well done on the Spark answers.', strengths: ['Clear examples'], improvements: ['Add more numbers'] } }));
+  ok(evCf.candidate_feedback?.summary === 'Well done on the Spark answers.' && evCf.candidate_feedback.improvements[0] === 'Add more numbers', 'candidate feedback is parsed');
+  const cr0 = buildCandidateReport({ mode: 'text', evaluation: evCf, skill_rating: 4, communication_rating: 4, overall_rating: 4 }, 'Role');
+  ok(!!cr0 && !/secret concern|advance|recommendation/i.test(JSON.stringify(cr0)), 'candidate report never carries concerns or the recommendation');
+  ok(buildCandidateReport({ mode: 'text', evaluation: null, skill_rating: null, communication_rating: null, overall_rating: null }, 'R') === null && maskEmail('priya@example.com') === 'p****@example.com' && maskEmail('x') === null, 'report needs an evaluation; email masking');
 
   section('core: spoken answer analysis');
   const va = parseVoiceAnalysis(JSON.stringify({ transcript: 'I built a pipeline that processes two terabytes of data every single day for the finance team', audible: true, clarity: 9, fluency: 0, structure: 'x', vocabulary_grammar: 4, professional_tone: 5, filler_words: 3, notes: 'Clear.' }), 30);
@@ -467,6 +475,112 @@ async function voiceFlow() {
   }
 }
 
+
+// =========================================================================================
+async function reportFlow() {
+  section('candidate report: what the candidate may see');
+  const sentMail: Array<{ to: string[]; subject: string; html: string }> = [];
+  const mkDeps = (m: ReturnType<typeof memoryStore>, over: Partial<AiInterviewDeps> = {}) => ({
+    ...stubDeps(m.store, { ai: true }),
+    sendEmail: async (to: string[], subject: string, html: string) => { sentMail.push({ to, subject, html }); return { ok: true }; },
+    ...over,
+  });
+  const finishText = async (call: Awaited<ReturnType<typeof boot>>['call'], body: Record<string, unknown> = {}) => {
+    const cr = await call('POST', '/api/ai-interviews', { submissionId: SUB_ID, maxQuestions: 3, mode: 'text', ...body }, STAFF);
+    const t = tokenOf(cr.body.link);
+    await call('POST', `/api/ai-interview/${t}/start`, { consent: true });
+    let last: Record<string, any> = {};
+    for (const [n, text] of [[1, 'I owned the Databricks ingestion layer, building idempotent merges at two terabytes a day.'], [2, 'I used Spark to cut a nightly job from three hours to forty minutes by salting the skewed keys.'], [3, 'I want platform ownership and can join within thirty days.']] as const) last = await call('POST', `/api/ai-interview/${t}/answer`, { answer: text, questionNumber: n });
+    return { t, sid: cr.body.session.id as string, last };
+  };
+
+  const m = memoryStore(mkSc({ sharedWithClientAt: '2026-11-16T09:00:00Z' }));
+  const { call, close } = await boot(mkDeps(m));
+  try {
+    const { t, sid, last } = await finishText(call);
+    const rep = last.body.report;
+    ok(last.body.status === 'completed' && rep?.ratings && rep.summary && rep.strengths.length > 0 && rep.improvements.length > 0, 'candidate sees a scorecard right after the interview', rep);
+    ok(!/recommendation|integrity|concern|advance|hold|reject|tab_hidden|token/i.test(JSON.stringify(last.body)), 'report has no recommendation, integrity data or recruiter concerns');
+    ok(last.body.emailHint === 'p****@example.com' && /\/signup$/.test(last.body.signupUrl), 'view offers the masked email on file and the signup link', { h: last.body.emailHint, u: last.body.signupUrl });
+
+    section('candidate report: emailing it');
+    const e1 = await call('POST', `/api/ai-interview/${t}/email-report`, {});
+    ok(e1.status === 200 && e1.body.ok === true && e1.body.to === 'p****@example.com' && sentMail.length === 1 && sentMail[0].to[0] === 'priya@example.com', 'report emailed to the address on file', e1.body);
+    const html = sentMail[0].html;
+    ok(/Create your account/.test(html) && /\/signup/.test(html) && /FTE/.test(html) && /Role skills/.test(html) && !/recommendation|integrity/i.test(html), 'email has the scorecard and the registration call-to-action, no recruiter-only data');
+    ok(!!m.rows.get(sid)!.candidate_report_emailed_at, 'emailing is recorded');
+    ok((await call('POST', `/api/ai-interview/${t}/email-report`, { email: 'someone@else.com' })).status === 200 && sentMail[1].to[0] === 'priya@example.com', 'a typed address cannot override the one on file');
+    await call('POST', `/api/ai-interview/${t}/email-report`, {});
+    ok((await call('POST', `/api/ai-interview/${t}/email-report`, {})).status === 429, 'repeat emailing is limited');
+
+    section('candidate report: switched off, not ready, no email on file');
+    const m2 = memoryStore(mkSc({ candidateEmail: null }));
+    const b2 = await boot(mkDeps(m2));
+    try {
+      const f = await finishText(b2.call, { showCandidateReport: false });
+      ok(f.last.body.status === 'completed' && f.last.body.report === null && f.last.body.reportAvailable === false, 'recruiter can switch the candidate report off');
+      ok((await b2.call('POST', `/api/ai-interview/${f.t}/email-report`, {})).status === 409, 'no report email when switched off');
+      const g = await finishText(b2.call);
+      ok(g.last.body.report && g.last.body.emailHint === null, 'no email on file: candidate is asked to type one');
+      ok((await b2.call('POST', `/api/ai-interview/${g.t}/email-report`, {})).body.code === 'email_required', 'typed address required');
+      ok((await b2.call('POST', `/api/ai-interview/${g.t}/email-report`, { email: 'not-an-email' })).status === 400, 'invalid address rejected');
+      const before = sentMail.length;
+      const okMail = await b2.call('POST', `/api/ai-interview/${g.t}/email-report`, { email: 'Priya.Alt@Example.com' });
+      ok(okMail.body.ok && sentMail.length === before + 1 && sentMail[before].to[0] === 'priya.alt@example.com', 'typed address is used when none is on file');
+    } finally { b2.close(); }
+    const m3 = memoryStore();
+    const b3 = await boot(mkDeps(m3, { sendEmail: async () => ({ ok: false, error: 'Resend 403: secret internal detail' }) }));
+    try {
+      const f = await finishText(b3.call);
+      const r = await b3.call('POST', `/api/ai-interview/${f.t}/email-report`, {});
+      ok(r.body.ok === false && !/Resend|secret/.test(JSON.stringify(r.body)), 'provider errors are not leaked to the candidate');
+    } finally { b3.close(); }
+
+    section('pipeline summaries: who sees what');
+    const VENDOR = { 'x-test-role': 'vendor_admin', 'x-test-org': VENDOR_ORG };
+    const OTHER_VENDOR = { 'x-test-role': 'vendor_admin', 'x-test-org': 'some-other-vendor' };
+    const q = `/api/ai-interviews/summaries?ids=${SUB_ID},not-a-uuid`;
+    const st = await call('GET', q, undefined, STAFF);
+    const sm = st.body.summaries?.[SUB_ID];
+    ok(sm?.status === 'completed' && sm.overall === 4 && sm.shared === false && sm.evaluated === true, 'staff see the score in the pipeline', sm);
+    ok((await call('GET', q, undefined, VENDOR)).body.summaries[SUB_ID] === undefined && (await call('GET', q, undefined, CLIENT)).body.summaries[SUB_ID] === undefined, 'vendor and client see nothing until it is shared');
+    ok((await call('GET', `/api/ai-interviews/scorecard?submissionId=${SUB_ID}`, undefined, VENDOR)).body.scorecards.length === 0, 'vendor scorecard list is empty before sharing');
+    ok((await call('POST', `/api/ai-interviews/${sid}/share`, { share: true }, STAFF)).status === 200, 'HQ shares');
+    const vs = await call('GET', q, undefined, VENDOR);
+    ok(vs.body.summaries[SUB_ID]?.overall === 4 && vs.body.summaries[SUB_ID].integrity === undefined, 'vendor of the candidate now sees the score (no integrity data)');
+    ok((await call('GET', q, undefined, OTHER_VENDOR)).body.summaries[SUB_ID] === undefined, 'a different vendor never sees it');
+    ok((await call('GET', q, undefined, CLIENT)).body.summaries[SUB_ID]?.overall === 4, 'the client of the requirement sees it (submission is shared with them)');
+    ok((await call('GET', q, undefined, { 'x-test-role': 'client_manager', 'x-test-org': 'other-client' })).body.summaries[SUB_ID] === undefined, 'a different client never sees it');
+    const vc = await call('GET', `/api/ai-interviews/scorecard?submissionId=${SUB_ID}`, undefined, VENDOR);
+    ok(vc.body.scorecards.length === 1 && vc.body.scorecards[0].candidateName === 'Priya Sharma' && !/integrity|concern|transcript/i.test(JSON.stringify(vc.body)), 'vendor can open the full scorecard (no internal data)');
+    ok((await call('GET', `/api/ai-interviews/scorecard?submissionId=${SUB_ID}`, undefined, OTHER_VENDOR)).status === 403, 'other vendors are refused the scorecard');
+    ok((await call('POST', `/api/ai-interviews/${sid}/share`, { share: false }, STAFF)).status === 200 && (await call('GET', q, undefined, VENDOR)).body.summaries[SUB_ID] === undefined, 'unsharing hides it from the vendor immediately');
+    const rc = await call('GET', '/api/ai-interviews/recent', undefined, STAFF);
+    ok(rc.status === 200 && rc.body.interviews.length >= 1 && rc.body.interviews[0].brief?.candidateName === 'Priya Sharma' && rc.body.interviews[0].submissionId === SUB_ID, 'recent feed lists finished interviews with candidate and role');
+    ok((await call('GET', '/api/ai-interviews/recent', undefined, VENDOR)).status === 403 && (await call('GET', '/api/ai-interviews/recent', undefined, CLIENT)).status === 403, 'recent feed is staff only');
+    ok((await call('GET', q)).status === 401, 'summaries need a login');
+  } finally { close(); }
+
+  section('candidate report: voice interview waits for its evaluation');
+  {
+    const mv = memoryStore();
+    const bv = await boot(mkDeps(mv));
+    try {
+      const cr = await bv.call('POST', '/api/ai-interviews', { submissionId: SUB_ID, maxQuestions: 3 }, STAFF);
+      const t = tokenOf(cr.body.link); const sid = cr.body.session.id;
+      await bv.call('POST', `/api/ai-interview/${t}/start`, { consent: true });
+      let last: Record<string, any> = {};
+      for (const n of [1, 2, 3]) {
+        mv.upload(sid, n, `Spoken answer number ${n} with enough words to count as a real response about my work`);
+        last = await bv.call('POST', `/api/ai-interview/${t}/answer`, { questionNumber: n, seconds: 20, recording: { audioPath: `${sid}/q${n}-audio.wav`, videoPath: `${sid}/q${n}-video.webm`, videoMime: 'video/webm', durationSeconds: 20 } });
+      }
+      ok(last.body.status === 'completed' && last.body.report === null && last.body.reportPending === true, 'voice interview: report is pending right after the last answer');
+      const fz = await bv.call('POST', `/api/ai-interview/${t}/finalize`, {});
+      ok(fz.body.reportPending === false && fz.body.report?.spoken === true && fz.body.report.voice?.clarity === 4 && !/integrity|recommendation/i.test(JSON.stringify(fz.body)), 'after finalize the candidate gets the spoken-communication scorecard, no integrity data');
+    } finally { bv.close(); }
+  }
+}
+
 async function liveGemini() {
   const key = [process.env.GEMINI_API_KEY, process.env.GOOGLE_API_KEY].find((k) => k && !/^(MY|YOUR)_/.test(k));
   if (!key || process.env.SKIP_LIVE === '1') {
@@ -521,6 +635,7 @@ async function liveGemini() {
   await unitTests();
   await textFlow();
   await voiceFlow();
+  await reportFlow();
   await liveGemini();
   console.log(`\n${checks - failures}/${checks} checks passed`);
   process.exit(failures ? 1 : 0);

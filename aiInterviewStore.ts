@@ -36,6 +36,8 @@ export interface SessionRow {
   shared_with_client_at: string | null;
   shared_by: string | null;
   recordings_expire_at: string | null;
+  show_candidate_report: boolean;
+  candidate_report_emailed_at: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;
@@ -77,6 +79,20 @@ export interface SubmissionContext {
   stage: string;
   resumePath: string | null;
   clientOrgId: string | null;
+  vendorOrgId: string | null;
+  sharedWithClientAt: string | null;
+}
+
+/** Light description of a submission, for list screens and access checks. */
+export interface SubmissionBrief {
+  id: string;
+  stage: string;
+  candidateName: string;
+  roleTitle: string;
+  clientOrgId: string | null;
+  clientName: string | null;
+  vendorOrgId: string | null;
+  vendorName: string | null;
   sharedWithClientAt: string | null;
 }
 
@@ -88,6 +104,7 @@ export interface NewSession {
   created_by: string;
   mode: InterviewMode;
   max_answer_seconds: number;
+  show_candidate_report?: boolean;
 }
 
 export interface SessionStore {
@@ -115,6 +132,10 @@ export interface SessionStore {
   download(path: string): Promise<Buffer | null>;
   signedReadUrl(path: string, seconds: number): Promise<string | null>;
   removeObjects(paths: string[]): Promise<void>;
+
+  listForSubmissions(submissionIds: string[]): Promise<SessionRow[]>;
+  listRecent(limit: number): Promise<SessionRow[]>;
+  submissionBriefs(submissionIds: string[]): Promise<SubmissionBrief[]>;
 
   /** Completed sessions whose recordings are past retention. */
   listExpiredRecordings(nowIso: string): Promise<SessionRow[]>;
@@ -165,7 +186,7 @@ export function createSupabaseStore(admin: SupabaseClient): SessionStore {
     async getSubmissionContext(submissionId) {
       const { data: sub } = await admin
         .from('submissions')
-        .select('id, stage, requirement_id, candidate_id, shared_with_client_at')
+        .select('id, stage, requirement_id, candidate_id, shared_with_client_at, vendor_org_id')
         .eq('id', submissionId)
         .maybeSingle();
       if (!sub) return null;
@@ -189,6 +210,7 @@ export function createSupabaseStore(admin: SupabaseClient): SessionStore {
         resumePath: (cand.resume_path as string | null) ?? null,
         clientOrgId: (req.client_org_id as string | null) ?? null,
         sharedWithClientAt: (sub.shared_with_client_at as string | null) ?? null,
+        vendorOrgId: (sub.vendor_org_id as string | null) ?? null,
         ctx: {
           roleTitle: String(req.title || 'the role'),
           roleDescription: String(req.description || ''),
@@ -287,6 +309,51 @@ export function createSupabaseStore(admin: SupabaseClient): SessionStore {
     async removeObjects(paths) {
       if (!paths.length) return;
       await admin.storage.from(RECORDINGS_BUCKET).remove(paths);
+    },
+
+    async listForSubmissions(submissionIds) {
+      if (!submissionIds.length) return [];
+      const { data } = await admin
+        .from('ai_interview_sessions')
+        .select('*')
+        .in('submission_id', submissionIds)
+        .order('created_at', { ascending: false });
+      return (data || []) as SessionRow[];
+    },
+    async listRecent(limit) {
+      const { data } = await admin
+        .from('ai_interview_sessions')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(limit);
+      return (data || []) as SessionRow[];
+    },
+    async submissionBriefs(submissionIds) {
+      if (!submissionIds.length) return [];
+      const { data } = await admin
+        .from('submissions')
+        .select('id, stage, shared_with_client_at, vendor_org_id, candidates(full_name), requirements(title, client_org_id, organizations(name)), organizations(name)')
+        .in('id', submissionIds);
+      type Row = {
+        id: string;
+        stage: string;
+        shared_with_client_at: string | null;
+        vendor_org_id: string | null;
+        candidates: { full_name: string } | null;
+        requirements: { title: string; client_org_id: string | null; organizations: { name: string } | null } | null;
+        organizations: { name: string } | null;
+      };
+      return ((data || []) as unknown as Row[]).map((r) => ({
+        id: r.id,
+        stage: String(r.stage),
+        candidateName: r.candidates?.full_name || 'Candidate',
+        roleTitle: r.requirements?.title || 'Requirement',
+        clientOrgId: r.requirements?.client_org_id ?? null,
+        clientName: r.requirements?.organizations?.name ?? null,
+        vendorOrgId: r.vendor_org_id ?? null,
+        vendorName: r.organizations?.name ?? null,
+        sharedWithClientAt: r.shared_with_client_at ?? null,
+      }));
     },
 
     async listExpiredRecordings(nowIso) {

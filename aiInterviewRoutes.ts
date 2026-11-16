@@ -8,6 +8,7 @@ import {
   answeredCount,
   buildEvalPrompt,
   buildQuestionPrompt,
+  buildCandidateReport,
   buildScorecard,
   buildVoicePrompt,
   canEvaluate,
@@ -19,6 +20,7 @@ import {
   hashToken,
   integritySummary,
   isPlausibleToken,
+  maskEmail,
   newToken,
   parseEvaluation,
   parseQuestion,
@@ -37,6 +39,7 @@ import {
   type RecordingRow,
   type SessionRow,
   type SessionStore,
+  type SubmissionBrief,
   type SubmissionContext,
 } from './aiInterviewStore';
 
@@ -112,7 +115,7 @@ function isExpired(s: SessionRow): boolean {
 const isOnline = (s: SessionRow) => !!s.last_seen_at && Date.now() - new Date(s.last_seen_at).getTime() < ONLINE_WINDOW_MS;
 
 /** Strips everything a candidate must never see (scores, token hash, staff metadata). */
-function publicView(s: SessionRow, ctx: InterviewContext) {
+function publicViewBase(s: SessionRow, ctx: InterviewContext) {
   const last = s.turns[s.turns.length - 1];
   const current = s.status === 'in_progress' && last?.role === 'ai' ? { number: last.n, text: last.text } : null;
   return {
@@ -144,6 +147,20 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
   const noStore = (res: express.Response) => res.setHeader('Cache-Control', 'no-store');
   const resumeCache = new Map<string, { at: number; text: string | null }>();
   const uploadIssued = new Map<string, number>();
+
+  /** Candidate-facing view: the interview state plus, once finished, the candidate's own report. */
+  function publicView(s: SessionRow, sc: SubmissionContext) {
+    const base = publicViewBase(s, sc.ctx);
+    const done = s.status === 'completed' && s.show_candidate_report;
+    return {
+      ...base,
+      report: done ? buildCandidateReport(s, sc.ctx.roleTitle) : null,
+      reportPending: done && !s.evaluation && s.error === 'pending_evaluation',
+      reportAvailable: s.show_candidate_report,
+      emailHint: maskEmail(sc.candidateEmail),
+      signupUrl: `${deps.appBaseUrl().replace(/\/$/, '')}/signup`,
+    };
+  }
 
   async function withResume(sc: SubmissionContext): Promise<InterviewContext> {
     if (!sc.resumePath) return sc.ctx;
@@ -267,7 +284,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
   }
 
   // ============================== staff (authenticated, HQ only) ==============================
-  async function guardStaff(req: express.Request, res: express.Response, opts: { allowClient?: boolean } = {}) {
+  async function guardStaff(req: express.Request, res: express.Response, opts: { allowClient?: boolean; allowVendor?: boolean } = {}) {
     noStore(res);
     const auth = await deps.authenticate(req, { strict: true });
     if (!auth.ok) {
@@ -276,7 +293,8 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
     }
     const staff = auth.role === 'admin' || auth.role === 'recruiter';
     const client = auth.role === 'client_manager' || auth.role === 'client_member';
-    if (!staff && !(opts.allowClient && client)) {
+    const vendor = auth.role === 'vendor_admin' || auth.role === 'vendor_recruiter';
+    if (!staff && !(opts.allowClient && client) && !(opts.allowVendor && vendor)) {
       res.status(403).json({ error: 'Internal staff access required.' });
       return null;
     }
@@ -285,7 +303,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       res.status(503).json({ error: 'Service unavailable.' });
       return null;
     }
-    return { auth, store, staff };
+    return { auth, store, staff, client, vendor };
   }
 
   const linkFor = (token: string) => `${deps.appBaseUrl().replace(/\/$/, '')}/ai-interview/${token}`;
@@ -346,6 +364,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
           mode,
           max_questions: clampQuestions(b.maxQuestions),
           max_answer_seconds: clampAnswerSeconds(b.maxAnswerSeconds),
+          show_candidate_report: b.showCandidateReport !== false,
         });
         if (!rotated) {
           res.status(409).json({ error: 'The interview changed while you were creating it. Please retry.' });
@@ -361,6 +380,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
           created_by: g.auth.userId,
           mode,
           max_answer_seconds: clampAnswerSeconds(b.maxAnswerSeconds),
+          show_candidate_report: b.showCandidateReport !== false,
         });
       }
       const link = linkFor(token);
@@ -403,7 +423,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
 
   // Client-safe scorecards. Staff see every completed evaluation; clients only what HQ has shared.
   app.get('/api/ai-interviews/scorecard', async (req, res) => {
-    const g = await guardStaff(req, res, { allowClient: true });
+    const g = await guardStaff(req, res, { allowClient: true, allowVendor: true });
     if (!g) return;
     const submissionId = String(req.query.submissionId || '');
     if (!UUID.test(submissionId)) {
@@ -415,7 +435,9 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       res.status(404).json({ error: 'Submission not found.' });
       return;
     }
-    if (!g.staff && (!sc.sharedWithClientAt || !g.auth.orgId || sc.clientOrgId !== g.auth.orgId)) {
+    const clientOk = g.client && !!sc.sharedWithClientAt && !!g.auth.orgId && sc.clientOrgId === g.auth.orgId;
+    const vendorOk = g.vendor && !!g.auth.orgId && sc.vendorOrgId === g.auth.orgId;
+    if (!g.staff && !clientOk && !vendorOk) {
       res.status(403).json({ error: 'Not available.' });
       return;
     }
@@ -432,6 +454,78 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       )
     );
     res.json({ scorecards: cards.filter(Boolean) });
+  });
+
+  // One row per submission for pipeline lists. Staff see everything; vendors and clients only what HQ shared.
+  type Summary = {
+    sessionId: string;
+    status: SessionRow['status'];
+    mode: InterviewMode;
+    answered: number;
+    maxQuestions: number;
+    overall: number | null;
+    skill: number | null;
+    communication: number | null;
+    recommendation: SessionRow['recommendation'];
+    shared: boolean;
+    completedAt: string | null;
+    integrity?: string | null;
+    evaluated: boolean;
+  };
+  const summarise = (s: SessionRow, staff: boolean): Summary => ({
+    sessionId: s.id,
+    status: s.status,
+    mode: s.mode,
+    answered: answeredCount(s.turns),
+    maxQuestions: s.max_questions,
+    overall: s.overall_rating,
+    skill: s.skill_rating,
+    communication: s.communication_rating,
+    recommendation: s.recommendation,
+    shared: !!s.shared_with_client_at,
+    completedAt: s.completed_at,
+    evaluated: !!s.evaluation,
+    ...(staff ? { integrity: s.evaluation?.integrity?.level ?? null } : {}),
+  });
+  const pickLatest = (rows: SessionRow[]) =>
+    rows.find((r) => r.status === 'completed') || rows.find((r) => r.status === 'in_progress') || rows.find((r) => r.status === 'invited');
+
+  app.get('/api/ai-interviews/summaries', async (req, res) => {
+    const g = await guardStaff(req, res, { allowClient: true, allowVendor: true });
+    if (!g) return;
+    const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter((x) => UUID.test(x)).slice(0, 60);
+    if (!ids.length) {
+      res.json({ summaries: {} });
+      return;
+    }
+    const [sessions, briefs] = await Promise.all([g.store.listForSubmissions(ids), g.store.submissionBriefs(ids)]);
+    const brief = new Map(briefs.map((b) => [b.id, b]));
+    const summaries: Record<string, Summary> = {};
+    for (const id of ids) {
+      const b = brief.get(id);
+      if (!b) continue;
+      let mine = sessions.filter((s) => s.submission_id === id);
+      if (!g.staff) {
+        const allowed = g.client ? !!g.auth.orgId && b.clientOrgId === g.auth.orgId && !!b.sharedWithClientAt : !!g.auth.orgId && b.vendorOrgId === g.auth.orgId;
+        if (!allowed) continue;
+        mine = mine.filter((s) => s.status === 'completed' && s.evaluation && s.shared_with_client_at);
+      }
+      const latest = pickLatest(mine);
+      if (latest) summaries[id] = summarise(latest, g.staff);
+    }
+    res.json({ summaries });
+  });
+
+  // Newest AI interviews across all submissions, so finished interviews are never "lost".
+  app.get('/api/ai-interviews/recent', async (req, res) => {
+    const g = await guardStaff(req, res);
+    if (!g) return;
+    const rows = (await g.store.listRecent(40)).filter((s) => s.status !== 'cancelled');
+    const briefs = await g.store.submissionBriefs([...new Set(rows.map((r) => r.submission_id))]);
+    const byId = new Map<string, SubmissionBrief>(briefs.map((b) => [b.id, b]));
+    res.json({
+      interviews: rows.map((s) => ({ ...summarise(s, true), submissionId: s.submission_id, createdAt: s.created_at, brief: byId.get(s.submission_id) ?? null })),
+    });
   });
 
   async function loadForStaff(req: express.Request, res: express.Response) {
@@ -671,7 +765,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       const c = await loadByToken(req, res);
       if (!c) return;
       if (terminal(c.s, res)) return;
-      res.json(publicView(c.s, c.sc.ctx));
+      res.json(publicView(c.s, c.sc));
     } catch (e) {
       console.error('[ai-interview] load failed:', e instanceof Error ? e.message : e);
       res.status(500).json({ error: 'Something went wrong. Please try again.' });
@@ -684,7 +778,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       if (!c) return;
       if (terminal(c.s, res)) return;
       if (c.s.status !== 'invited') {
-        res.json(publicView(c.s, c.sc.ctx));
+        res.json(publicView(c.s, c.sc));
         return;
       }
       if (req.body?.consent !== true) {
@@ -708,10 +802,10 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       });
       if (!u) {
         const fresh = await c.store.getById(c.s.id);
-        res.json(publicView(fresh || c.s, c.sc.ctx));
+        res.json(publicView(fresh || c.s, c.sc));
         return;
       }
-      res.json(publicView(u, c.sc.ctx));
+      res.json(publicView(u, c.sc));
     } catch (e) {
       console.error('[ai-interview] start failed:', e instanceof Error ? e.message : e);
       res.status(500).json({ error: 'Could not start the interview. Please try again.' });
@@ -800,13 +894,13 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       if (terminal(c.s, res)) return;
       const { s, sc, store } = c;
       if (s.status !== 'in_progress') {
-        res.status(409).json({ error: 'This interview is not in progress.', ...publicView(s, sc.ctx) });
+        res.status(409).json({ error: 'This interview is not in progress.', ...publicView(s, sc) });
         return;
       }
       const b = (req.body || {}) as Record<string, any>;
       const last = s.turns[s.turns.length - 1];
       if (!last || last.role !== 'ai' || last.n !== Number(b.questionNumber)) {
-        res.status(409).json({ error: 'That question has already been answered.', ...publicView(s, sc.ctx) });
+        res.status(409).json({ error: 'That question has already been answered.', ...publicView(s, sc) });
         return;
       }
 
@@ -874,7 +968,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
           res.status(409).json({ error: 'This answer was already received.' });
           return;
         }
-        res.json(publicView(done, sc.ctx));
+        res.json(publicView(done, sc));
         return;
       }
 
@@ -887,7 +981,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
         res.status(409).json({ error: 'This answer was already received.' });
         return;
       }
-      res.json(publicView(u, sc.ctx));
+      res.json(publicView(u, sc));
     } catch (e) {
       console.error('[ai-interview] answer failed:', e instanceof Error ? e.message : e);
       res.status(500).json({ error: 'Could not save your answer. Please try again.' });
@@ -901,7 +995,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       if (terminal(c.s, res)) return;
       const { s, sc, store } = c;
       if (s.status === 'completed') {
-        res.json(publicView(s, sc.ctx));
+        res.json(publicView(s, sc));
         return;
       }
       if (s.status !== 'in_progress') {
@@ -912,13 +1006,61 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       const done = await complete(store, s, sc, turns);
       if (!done) {
         const fresh = await store.getById(s.id);
-        res.json(publicView(fresh || s, sc.ctx));
+        res.json(publicView(fresh || s, sc));
         return;
       }
-      res.json(publicView(done, sc.ctx));
+      res.json(publicView(done, sc));
     } catch (e) {
       console.error('[ai-interview] finish failed:', e instanceof Error ? e.message : e);
       res.status(500).json({ error: 'Could not finish the interview. Please try again.' });
+    }
+  });
+
+  // Emails the candidate their own report, with details for registering on the platform.
+  app.post('/api/ai-interview/:token/email-report', async (req, res) => {
+    try {
+      const c = await loadByToken(req, res);
+      if (!c) return;
+      if (terminal(c.s, res)) return;
+      const { s, sc, store } = c;
+      const report = s.status === 'completed' && s.show_candidate_report ? buildCandidateReport(s, sc.ctx.roleTitle) : null;
+      if (!report) {
+        res.status(409).json({ error: 'Your report is not ready yet.' });
+        return;
+      }
+      const typed = String(req.body?.email || '').trim().toLowerCase();
+      const to = sc.candidateEmail || (/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(typed) && typed.length <= 160 ? typed : null);
+      if (!to) {
+        res.status(400).json({ error: 'Please enter a valid email address.', code: 'email_required' });
+        return;
+      }
+      if (rateLimited(`report:${s.id}`, 3, 24 * 3600_000)) {
+        res.status(429).json({ error: 'The report has already been emailed. Please check your inbox and spam folder.' });
+        return;
+      }
+      const signup = `${deps.appBaseUrl().replace(/\/$/, '')}/signup`;
+      const host = deps.appBaseUrl().replace(/^https?:\/\//, '').replace(/\/$/, '');
+      const list = (items: string[]) => (items.length ? `<ul style="margin:6px 0 0;padding-left:18px">${items.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '');
+      const stat = (label: string, v: number | null) => `<td style="padding:8px 14px;border:1px solid #E6E0D6;text-align:center"><div style="font-size:11px;color:#716E64">${label}</div><div style="font-size:22px;font-weight:700">${v ?? '-'}<span style="font-size:12px;color:#716E64"> / 5</span></div></td>`;
+      const html = `<div style="font-family:Arial,sans-serif;color:#14213D;max-width:560px">
+<p>Hi ${esc(sc.ctx.candidateFirstName)},</p>
+<p>Thank you for completing your interview for <strong>${esc(sc.ctx.roleTitle)}</strong>. Here is your screening scorecard.</p>
+<table style="border-collapse:collapse;margin:12px 0"><tr>${stat('Role skills', report.ratings.skill)}${stat(report.spoken ? 'Spoken communication' : 'Communication', report.ratings.communication)}${stat('Overall', report.ratings.overall)}</tr></table>
+<p>${esc(report.summary)}</p>
+${report.strengths.length ? `<p style="margin-bottom:0"><strong>What went well</strong></p>${list(report.strengths)}` : ''}
+${report.improvements.length ? `<p style="margin-bottom:0"><strong>To work on</strong></p>${list(report.improvements)}` : ''}
+<div style="margin:20px 0;padding:14px;border:1px solid #CFDFFC;background:#F4F8FF;border-radius:10px">
+<strong>Looking for more roles?</strong><br/>Create a free account on HireNest OS (${esc(host)}) to apply for full-time (FTE) openings and more jobs, and keep your profile and reports in one place.<br/><br/>
+<a href="${esc(signup)}" style="display:inline-block;padding:10px 20px;background:#1F4CC4;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Create your account</a>
+</div>
+<p style="font-size:12px;color:#667085">This scorecard is AI-assisted and reviewed by HireNest. It is not a hiring decision.</p></div>`;
+      const out = await deps.sendEmail([to], `Your HireNest interview scorecard: ${sc.ctx.roleTitle}`, html);
+      if (!out.ok) console.warn('[ai-interview] report email failed:', out.error);
+      if (out.ok) await store.update(s.id, s.version, { candidate_report_emailed_at: new Date().toISOString() }).catch(() => null);
+      res.json(out.ok ? { ok: true, to: maskEmail(to) } : { ok: false, error: 'We could not send the email right now. Please try again later.' });
+    } catch (e) {
+      console.error('[ai-interview] email-report failed:', e instanceof Error ? e.message : e);
+      res.status(500).json({ error: 'Something went wrong. Please try again.' });
     }
   });
 
@@ -929,7 +1071,7 @@ export function registerAiInterviewRoutes(app: express.Express, deps: AiIntervie
       const c = await loadByToken(req, res);
       if (!c) return;
       const s = await ensureEvaluated(c.store, c.s);
-      res.json(publicView(s, c.sc.ctx));
+      res.json(publicView(s, c.sc));
     } catch (e) {
       console.error('[ai-interview] finalize failed:', e instanceof Error ? e.message : e);
       res.status(500).json({ error: 'Something went wrong.' });

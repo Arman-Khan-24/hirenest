@@ -39,6 +39,7 @@ import { MatchEvidencePanel } from '../../components/domain/MatchEvidence';
 import { VendorPerformancePanel } from '../../components/domain/VendorScoreCard';
 import { RequirementFormModal } from '../../components/domain/RequirementFormModal';
 import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetailDrawer';
+import { AiScoreCell, useAiInterviewSummaries } from '../../components/domain/AiScore';
 import {
   InterviewFeedbackModal,
   CandidateQualityModal,
@@ -1150,6 +1151,8 @@ export const ClientCandidatesReviewPage: React.FC = () => {
     (m) => m.candidate_id === evidenceCandId
   );
 
+  const aiSummaries = useAiInterviewSummaries((data?.data || []).map((x) => x.id)).data;
+
   return (
     <div>
       <PageHeader
@@ -1210,6 +1213,13 @@ export const ClientCandidatesReviewPage: React.FC = () => {
                       <SourceBadge
                         source={sub.source}
                         vendorName={sub.organizations?.name}
+                      />
+                      <AiScoreCell
+                        submissionId={sub.id}
+                        summary={aiSummaries?.[sub.id]}
+                        viewer="client"
+                        candidateName={sub.candidates?.full_name || 'Candidate'}
+                        roleTitle={sub.requirements?.title}
                       />
                     </div>
                     <p className="text-[13px] text-[var(--text-secondary)]">

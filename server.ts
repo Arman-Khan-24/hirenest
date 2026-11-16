@@ -5165,6 +5165,24 @@ Return JSON array of objects with fields: targetSkill, question.`;
   });
 
   // User & Team Management (RBAC) — server-enforced
+  // Safety net: requirements close when their SLA runs out even if the scheduled jobs are late.
+  // Runs at most once every 5 minutes per server instance, on whichever API call arrives first.
+  let lastSlaSweep = 0;
+  app.use('/api', async (req, _res, next) => {
+    const now = Date.now();
+    if (now - lastSlaSweep > 5 * 60_000 && !req.path.startsWith('/alerts')) {
+      lastSlaSweep = now;
+      const admin = getSupabaseAdmin();
+      if (admin) {
+        await Promise.race([
+          runSlaAutoClose(admin).catch((e) => console.warn('[sla-close] sweep failed:', e instanceof Error ? e.message : e)),
+          new Promise((r) => setTimeout(r, 4000)),
+        ]);
+      }
+    }
+    next();
+  });
+
   registerStaffRoutes(app, { authenticate: authenticateStaffingCaller, getAdmin: getSupabaseAdmin });
   registerVendorTeamRoutes(app, { authenticate: authenticateStaffingCaller, getAdmin: getSupabaseAdmin });
   registerAiInterviewRoutes(app, {
@@ -5309,6 +5327,12 @@ Return JSON array of objects with fields: targetSkill, question.`;
           .single();
         submissionData = data;
       } catch { /* fallback below */ }
+    }
+
+    // A deal room only opens once the candidate has been passed to the client.
+    if (submissionData && !(submissionData as { shared_with_client_at?: string | null }).shared_with_client_at) {
+      res.status(409).json({ error: 'The deal room opens once the candidate is passed to the client. Submit the candidate to the client first.' });
+      return;
     }
 
     const roomId = crypto.randomUUID();

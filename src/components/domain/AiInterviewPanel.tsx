@@ -488,11 +488,11 @@ const SessionCard: React.FC<{
                   </Button>
                 ) : (
                   <Button size="sm" loading={share.isPending} onClick={() => share.mutate(true)}>
-                    <Share2 className="h-3.5 w-3.5" /> Share with client
+                    <Share2 className="h-3.5 w-3.5" /> Share with client and vendor
                   </Button>
                 )}
               </div>
-              <p className="text-[11px] text-[var(--text-tertiary)]">The client sees the scorecard on this candidate once the submission is shared with them.</p>
+              <p className="text-[11px] text-[var(--text-tertiary)]">The vendor who submitted this candidate sees the scorecard immediately. The client sees it once the candidate is passed to them.</p>
               {card && previewing && <ScorecardDialog card={card} open onClose={() => setPreviewing(false)} />}
             </div>
           )}
@@ -572,6 +572,7 @@ export const AiInterviewPanel: React.FC<{ submissionId: string; candidateName: s
   const [answerSeconds, setAnswerSeconds] = useState('120');
   const [hours, setHours] = useState('72');
   const [sendEmail, setSendEmail] = useState(true);
+  const [showReport, setShowReport] = useState(true);
   const [lastLink, setLastLink] = useState<CreateAiInterviewResult | null>(null);
 
   const { data, isLoading, error, refetch } = useQuery({
@@ -607,6 +608,7 @@ export const AiInterviewPanel: React.FC<{ submissionId: string; candidateName: s
         maxAnswerSeconds: Number(answerSeconds),
         expiresInHours: Number(hours),
         sendEmail,
+        showCandidateReport: showReport,
       }),
     onSuccess: (r) => {
       showResult(r);
@@ -690,6 +692,13 @@ export const AiInterviewPanel: React.FC<{ submissionId: string; candidateName: s
         <label className="flex cursor-pointer items-center gap-2.5 text-[13px]">
           <input type="checkbox" checked={sendEmail} onChange={(e) => setSendEmail(e.target.checked)} className="h-4 w-4 accent-[var(--primary-bg)]" />
           Email the invitation to the candidate
+        </label>
+        <label className="flex cursor-pointer items-start gap-2.5 text-[13px]">
+          <input type="checkbox" checked={showReport} onChange={(e) => setShowReport(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[var(--primary-bg)]" />
+          <span>
+            Show the candidate their scorecard when they finish, with an option to email it to themselves and register for more jobs
+            <span className="block text-[11px] text-[var(--text-tertiary)]">Candidates see scores and feedback only. Never the recommendation, integrity notes or recruiter concerns.</span>
+          </span>
         </label>
         <div className="flex flex-wrap items-center gap-3">
           <Button loading={create.isPending} disabled={busy} onClick={() => create.mutate()}>

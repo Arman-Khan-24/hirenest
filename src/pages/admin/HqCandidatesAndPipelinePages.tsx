@@ -33,6 +33,8 @@ import {
 } from '../../lib/recruiterValidation';
 import { MatchEvidencePanel } from '../../components/domain/MatchEvidence';
 import { AiInterviewPanel } from '../../components/domain/AiInterviewPanel';
+import { AiScoreCell, AiScoreHeader, useAiInterviewSummaries } from '../../components/domain/AiScore';
+import { aiInterviewApi } from '../../api/aiInterviews';
 import { FitmentScoreCard } from '../../components/domain/FitmentScoreCard';
 import { CandidateFormModal } from '../../components/domain/CandidateFormModal';
 import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetailDrawer';
@@ -1404,6 +1406,7 @@ export const HqSubmissionsPage: React.FC = () => {
   const filteredRows = decisionGateFilter
     ? rows.filter((r) => r.validation.decision_gate === decisionGateFilter)
     : rows;
+  const aiSummaries = useAiInterviewSummaries(filteredRows.map((r) => r.sub.id)).data;
 
   return (
     <div className="space-y-6">
@@ -1502,7 +1505,7 @@ export const HqSubmissionsPage: React.FC = () => {
       </div>
 
       {isLoading ? (
-        <TableSkeleton rows={6} cols={8} />
+        <TableSkeleton rows={6} cols={9} />
       ) : error ? (
         <ErrorState message={mapSupabaseError(error)} onRetry={() => refetch()} />
       ) : !filteredRows.length ? (
@@ -1521,6 +1524,9 @@ export const HqSubmissionsPage: React.FC = () => {
                   <th>Source & vendor</th>
                   <th>JD match & gaps</th>
                   <th>Validation gate & rating</th>
+                  <th>
+                    <AiScoreHeader />
+                  </th>
                   <th>Follow-up</th>
                   <th>Stage & compliance</th>
                   <th>Submitted</th>
@@ -1624,6 +1630,15 @@ export const HqSubmissionsPage: React.FC = () => {
                         </div>
                       </td>
                       <td>
+                        <AiScoreCell
+                          submissionId={sub.id}
+                          summary={aiSummaries?.[sub.id]}
+                          viewer="staff"
+                          candidateName={sub.candidates?.full_name || 'Candidate'}
+                          roleTitle={sub.requirements?.title}
+                        />
+                      </td>
+                      <td>
                         {latestFollowUp ? (
                           <div className="flex flex-col items-start gap-0.5">
                             <Badge
@@ -1673,6 +1688,12 @@ export const HqSubmissionsPage: React.FC = () => {
                           size="sm"
                           variant="outline"
                           className="mt-1 ml-1"
+                          disabled={!sub.shared_with_client_at}
+                          title={
+                            sub.shared_with_client_at
+                              ? 'Open the deal room with the client'
+                              : 'The deal room opens once the candidate is passed to the client'
+                          }
                           onClick={async (e) => {
                             e.stopPropagation();
                             try {
@@ -1898,6 +1919,13 @@ export const HqInterviewsPage: React.FC = () => {
     queryFn: fetchMyPendingFeedback,
   });
 
+  const { data: aiRecent = [] } = useQuery({
+    queryKey: ['ai_recent'],
+    queryFn: aiInterviewApi.recent,
+    refetchInterval: 15000,
+    retry: false,
+  });
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['interviews', page, status],
     queryFn: () => fetchInterviews({ page, status }),
@@ -1964,6 +1992,55 @@ export const HqInterviewsPage: React.FC = () => {
           queryClient.invalidateQueries({ queryKey: ['interviews'] });
         }}
       />
+
+      {/* AI interviews: every invited, running and finished AI interview, with scores */}
+      {aiRecent.length > 0 && (
+        <section className="space-y-2">
+          <h3 className="text-[12px] leading-[16px] font-medium uppercase tracking-[0.04em] text-[var(--text-tertiary)]">
+            AI interviews ({aiRecent.length})
+          </h3>
+          <div className="overflow-x-auto border-t border-[var(--border)]">
+            <table>
+              <thead>
+                <tr>
+                  <th>Candidate & requirement</th>
+                  <th>Client / vendor</th>
+                  <th>Type</th>
+                  <th>
+                    <AiScoreHeader />
+                  </th>
+                  <th>Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aiRecent.map((ai) => (
+                  <tr key={ai.sessionId}>
+                    <td>
+                      <div className="font-medium">{ai.brief?.candidateName || 'Candidate'}</div>
+                      <div className="text-[12px] leading-[16px] text-[var(--text-tertiary)]">{ai.brief?.roleTitle || 'Requirement'}</div>
+                    </td>
+                    <td className="text-[12px] text-[var(--text-secondary)]">
+                      <div>{ai.brief?.clientName || '-'}</div>
+                      <div className="text-[var(--text-tertiary)]">{ai.brief?.vendorName ? `via ${ai.brief.vendorName}` : 'Direct'}</div>
+                    </td>
+                    <td className="font-mono text-[12px] text-[var(--text-secondary)]">{ai.mode === 'voice_video' ? 'voice + video' : 'text'}</td>
+                    <td>
+                      <AiScoreCell
+                        submissionId={ai.submissionId}
+                        summary={ai}
+                        viewer="staff"
+                        candidateName={ai.brief?.candidateName || 'Candidate'}
+                        roleTitle={ai.brief?.roleTitle}
+                      />
+                    </td>
+                    <td className="font-mono tabular-nums text-[12px] text-[var(--text-secondary)]">{formatLocalDateTime(ai.completedAt || ai.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {/* Needs attention: Pending Feedback Queue */}
       {pendingFeedback.length > 0 && (

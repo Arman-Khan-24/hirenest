@@ -2,10 +2,11 @@
  * Shared test doubles for the AI interview backend: an in-memory SessionStore with fake object
  * storage. Used by scripts/verify-ai-interview.ts. Never touches the real database or storage.
  */
-import type { EventInput, EventRow, RecordingRow, SessionRow, SessionStore, SubmissionContext } from '../aiInterviewStore';
+import type { EventInput, EventRow, RecordingRow, SessionRow, SessionStore, SubmissionBrief, SubmissionContext } from '../aiInterviewStore';
 import type { InterviewContext } from '../aiInterviewCore';
 
 export const SUB_ID = '11111111-1111-4111-8111-111111111111';
+export const VENDOR_ORG = '44444444-4444-4444-8444-444444444444';
 export const CLIENT_ORG = '33333333-3333-4333-8333-333333333333';
 export const baseCtx: InterviewContext = {
   roleTitle: 'Senior Data Engineer',
@@ -17,26 +18,27 @@ export const baseCtx: InterviewContext = {
 };
 export const mkSc = (over: Partial<SubmissionContext> = {}): SubmissionContext => ({
   ctx: baseCtx, candidateEmail: 'priya@example.com', stage: 'recruiter_review',
-  resumePath: null, clientOrgId: CLIENT_ORG, sharedWithClientAt: null, ...over,
+  resumePath: null, clientOrgId: CLIENT_ORG, vendorOrgId: VENDOR_ORG, sharedWithClientAt: null, ...over,
 });
 
+let globalSeq = 0;
 export function memoryStore(sc: SubmissionContext | null = mkSc()) {
   const rows = new Map<string, SessionRow>();
   const recs = new Map<string, RecordingRow>();
   const events: EventRow[] = [];
   const objects = new Map<string, Buffer>();
   const notes: Array<{ userId: string; title: string }> = [];
-  let seq = 0;
   const store: SessionStore = {
     async create(r) {
       const now = new Date().toISOString();
       const row: SessionRow = {
-        id: `00000000-0000-4000-8000-${String(++seq).padStart(12, '0')}`, token_hash: r.token_hash, submission_id: r.submission_id,
+        id: `00000000-0000-4000-8000-${String(++globalSeq).padStart(12, '0')}`, token_hash: r.token_hash, submission_id: r.submission_id,
         interview_id: null, status: 'invited', mode: r.mode, max_questions: r.max_questions, max_answer_seconds: r.max_answer_seconds,
         expires_at: r.expires_at, consent_at: null, consent_version: null, started_at: null, completed_at: null, last_seen_at: null,
         turns: [], evaluation: null, skill_rating: null, communication_rating: null, overall_rating: null, recommendation: null,
         question_source: 'ai', model_name: null, prompt_version: null, error: null, version: 0, invite_email_sent_at: null,
         client_summary: null, shared_with_client_at: null, shared_by: null, recordings_expire_at: null,
+        show_candidate_report: r.show_candidate_report ?? true, candidate_report_emailed_at: null,
         created_by: r.created_by, created_at: now, updated_at: now,
       };
       rows.set(row.id, row);
@@ -71,6 +73,13 @@ export function memoryStore(sc: SubmissionContext | null = mkSc()) {
     async download(path) { return objects.get(path) ?? null; },
     async signedReadUrl(path) { return objects.has(path) ? `https://signed.test/${path}?exp=1` : null; },
     async removeObjects(paths) { for (const p of paths) objects.delete(p); },
+    async listForSubmissions(ids) { return [...rows.values()].filter((r) => ids.includes(r.submission_id)).sort((a, b) => b.created_at.localeCompare(a.created_at)).map((r) => structuredClone(r)); },
+    async listRecent(limit) { return [...rows.values()].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, limit).map((r) => structuredClone(r)); },
+    async submissionBriefs(ids): Promise<SubmissionBrief[]> {
+      const c = sc;
+      if (!c || !ids.includes(SUB_ID)) return [];
+      return [{ id: SUB_ID, stage: c.stage, candidateName: c.ctx.candidateFullName, roleTitle: c.ctx.roleTitle, clientOrgId: c.clientOrgId, clientName: 'Acme Corp', vendorOrgId: c.vendorOrgId, vendorName: 'Vendor One', sharedWithClientAt: c.sharedWithClientAt }];
+    },
     async listExpiredRecordings(nowIso) { return [...rows.values()].filter((r) => r.recordings_expire_at && r.recordings_expire_at < nowIso).map((r) => structuredClone(r)); },
   };
   const upload = (sessionId: string, n: number, speech: string, ext = 'webm') => {

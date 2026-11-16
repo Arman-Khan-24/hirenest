@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { CheckCircle2, Clock, Loader2, Send, ShieldCheck, Sparkles } from 'lucide-react';
 import { DeviceCheck, VoiceInterviewRoom } from '../../components/domain/VoiceInterview';
+import { CandidateReportScreen } from '../../components/domain/CandidateReport';
 import { stopStream } from '../../lib/interviewMedia';
 import { PublicInterviewError, publicInterviewApi, type PublicInterviewView } from '../../api/aiInterviews';
 
@@ -71,6 +72,7 @@ export const AiInterviewPage: React.FC = () => {
   const streamRef = useRef<MediaStream | null>(null);
   const resumed = useRef(false);
   const finalized = useRef(false);
+  const [reportFailed, setReportFailed] = useState(false);
 
   const shownAt = useRef<number>(Date.now());
   const pasted = useRef(false);
@@ -131,11 +133,14 @@ export const AiInterviewPage: React.FC = () => {
   useEffect(() => {
     if (view?.status !== 'completed') return;
     changeStream(null);
-    if (view.mode === 'voice_video' && !finalized.current) {
+    if (view.reportPending && !finalized.current) {
       finalized.current = true;
-      void publicInterviewApi.finalize(token).catch(() => undefined);
+      publicInterviewApi
+        .finalize(token)
+        .then((v) => setView(v))
+        .catch(() => setReportFailed(true));
     }
-  }, [view?.status, view?.mode, token, changeStream]);
+  }, [view?.status, view?.reportPending, token, changeStream]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
@@ -231,6 +236,32 @@ export const AiInterviewPage: React.FC = () => {
   const minutes = Math.round(view.maxQuestions * (voice ? 3 : 2.5));
 
   if (view.status === 'completed') {
+    if (view.report) {
+      return (
+        <Shell subtitle={view.roleTitle}>
+          <CandidateReportScreen
+            token={token}
+            firstName={view.candidateFirstName}
+            report={view.report}
+            emailHint={view.emailHint}
+            signupUrl={view.signupUrl || '/signup'}
+          />
+        </Shell>
+      );
+    }
+    if (view.reportPending && !reportFailed) {
+      return (
+        <Shell subtitle={view.roleTitle}>
+          <main className="flex flex-1 items-center justify-center px-4 py-10" role="status" aria-busy="true">
+            <div className="w-full max-w-md rounded-[14px] border border-[var(--border)] bg-[var(--surface)] p-6 text-center">
+              <Loader2 className="mx-auto h-8 w-8 animate-spin text-[var(--accent)]" aria-hidden />
+              <h1 className="mt-3 text-[18px] font-semibold">Thank you, {view.candidateFirstName}</h1>
+              <p className="mt-2 text-[14px] leading-[22px] text-[var(--text-secondary)]">Your interview is complete. We are preparing your scorecard. This takes about half a minute.</p>
+            </div>
+          </main>
+        </Shell>
+      );
+    }
     return (
       <Shell subtitle={view.roleTitle}>
         <Notice

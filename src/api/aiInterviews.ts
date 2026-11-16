@@ -97,6 +97,7 @@ export interface AiInterviewSession {
   client_summary: string | null;
   shared_with_client_at: string | null;
   recordings_expire_at: string | null;
+  show_candidate_report?: boolean;
   created_at: string;
   // voice + video sessions only
   integrity?: IntegritySummary;
@@ -132,6 +133,40 @@ export interface AiLiveSnapshot {
   events: Array<{ type: string; at: string; duration_ms: number | null; question_no: number | null }>;
   integrity: IntegritySummary;
   latestRecording: { questionNo: number; videoUrl: string | null; transcript: string | null; voice: VoiceMetrics | null; durationSeconds: number | null } | null;
+}
+
+export interface AiSummary {
+  sessionId: string;
+  status: AiInterviewStatus;
+  mode: AiInterviewMode;
+  answered: number;
+  maxQuestions: number;
+  overall: number | null;
+  skill: number | null;
+  communication: number | null;
+  recommendation: AiRecommendation | null;
+  shared: boolean;
+  completedAt: string | null;
+  evaluated: boolean;
+  integrity?: string | null;
+}
+
+export interface SubmissionBrief {
+  id: string;
+  stage: string;
+  candidateName: string;
+  roleTitle: string;
+  clientOrgId: string | null;
+  clientName: string | null;
+  vendorOrgId: string | null;
+  vendorName: string | null;
+  sharedWithClientAt: string | null;
+}
+
+export interface RecentAiInterview extends AiSummary {
+  submissionId: string;
+  createdAt: string;
+  brief: SubmissionBrief | null;
 }
 
 export interface Scorecard {
@@ -174,7 +209,7 @@ const post = (url: string, body: unknown = {}) => staffApi<{ ok: boolean; sessio
 export const aiInterviewApi = {
   list: (submissionId: string) =>
     staffApi<{ sessions: AiInterviewSession[] }>(`/api/ai-interviews?submissionId=${encodeURIComponent(submissionId)}`).then((r) => r.sessions),
-  create: (p: { submissionId: string; mode: AiInterviewMode; maxQuestions: number; maxAnswerSeconds: number; expiresInHours: number; sendEmail: boolean }) =>
+  create: (p: { submissionId: string; mode: AiInterviewMode; maxQuestions: number; maxAnswerSeconds: number; expiresInHours: number; sendEmail: boolean; showCandidateReport: boolean }) =>
     staffApi<CreateAiInterviewResult>('/api/ai-interviews', { method: 'POST', body: JSON.stringify(p) }),
   cancel: (id: string) => post(`/api/ai-interviews/${id}/cancel`),
   regenerateLink: (id: string, sendEmail: boolean) =>
@@ -185,12 +220,30 @@ export const aiInterviewApi = {
   deleteRecordings: (id: string) => staffApi<{ ok: boolean; deleted: number }>(`/api/ai-interviews/${id}/recordings/delete`, { method: 'POST', body: '{}' }),
   setClientSummary: (id: string, text: string) => post(`/api/ai-interviews/${id}/client-summary`, { text }),
   share: (id: string, share: boolean) => post(`/api/ai-interviews/${id}/share`, { share }),
+  summaries: (submissionIds: string[]) =>
+    staffApi<{ summaries: Record<string, AiSummary> }>(`/api/ai-interviews/summaries?ids=${submissionIds.map(encodeURIComponent).join(',')}`).then((r) => r.summaries),
+  recent: () => staffApi<{ interviews: RecentAiInterview[] }>('/api/ai-interviews/recent').then((r) => r.interviews),
   scorecards: (submissionId: string) =>
     staffApi<{ scorecards: Scorecard[] }>(`/api/ai-interviews/scorecard?submissionId=${encodeURIComponent(submissionId)}`).then((r) => r.scorecards),
 };
 
 // ------------------------------------------------------------ candidate side
+export interface CandidateReport {
+  roleTitle: string;
+  spoken: boolean;
+  ratings: { skill: number | null; communication: number | null; overall: number | null };
+  summary: string;
+  strengths: string[];
+  improvements: string[];
+  voice: { clarity: number; fluency: number; structure: number; vocabulary: number; tone: number; avgWpm: number | null } | null;
+}
+
 export interface PublicInterviewView {
+  report?: CandidateReport | null;
+  reportPending?: boolean;
+  reportAvailable?: boolean;
+  emailHint?: string | null;
+  signupUrl?: string;
   status: AiInterviewStatus;
   mode: AiInterviewMode;
   maxAnswerSeconds: number;
@@ -263,6 +316,8 @@ export const publicInterviewApi = {
     publicApi(`${encodeURIComponent(token)}/answer`, 'POST', p),
   finish: (token: string) => publicApi(`${encodeURIComponent(token)}/finish`, 'POST', {}),
   finalize: (token: string) => publicApi(`${encodeURIComponent(token)}/finalize`, 'POST', {}),
+  emailReport: (token: string, email?: string) =>
+    publicApi<{ ok: boolean; to?: string; error?: string }>(`${encodeURIComponent(token)}/email-report`, 'POST', email ? { email } : {}),
   uploadUrls: (token: string, p: { questionNumber: number; videoMime: string }) =>
     publicApi<UploadUrls>(`${encodeURIComponent(token)}/upload-urls`, 'POST', p),
   ping: (token: string) => publicApi<{ ok: boolean }>(`${encodeURIComponent(token)}/ping`, 'POST', {}, true).catch(() => undefined),

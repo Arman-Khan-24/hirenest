@@ -41,6 +41,7 @@ import { MatchEvidencePanel } from '../../components/domain/MatchEvidence';
 import { FitmentScoreCard } from '../../components/domain/FitmentScoreCard';
 import { VendorPerformancePanel } from '../../components/domain/VendorScoreCard';
 import { CandidateFormModal } from '../../components/domain/CandidateFormModal';
+import { AiScoreCell, AiScoreHeader, useAiInterviewSummaries } from '../../components/domain/AiScore';
 import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetailDrawer';
 import { DuplicateDialog } from '../../components/domain/DuplicateDialog';
 import {
@@ -2180,6 +2181,7 @@ export const VendorSubmissionsPage: React.FC = () => {
     queryFn: fetchAllValidationRecordsFromBackend,
     refetchInterval: 10000,
   });
+  const aiSummaries = useAiInterviewSummaries((data?.data || []).map((x) => x.id)).data;
 
   return (
     <div>
@@ -2227,6 +2229,9 @@ export const VendorSubmissionsPage: React.FC = () => {
                   <th>Candidate</th>
                   <th>Requirement</th>
                   <th>Recruiter validation</th>
+                  <th>
+                    <AiScoreHeader />
+                  </th>
                   <th>Follow-up / gap action</th>
                   <th>Stage</th>
                   <th>Compliance</th>
@@ -2256,6 +2261,15 @@ export const VendorSubmissionsPage: React.FC = () => {
                         <Badge tone={DECISION_GATE_TONES[validation.decision_gate]}>
                           {DECISION_GATE_LABELS[validation.decision_gate]}
                         </Badge>
+                      </td>
+                      <td>
+                        <AiScoreCell
+                          submissionId={sub.id}
+                          summary={aiSummaries?.[sub.id]}
+                          viewer="vendor"
+                          candidateName={sub.candidates?.full_name || 'Candidate'}
+                          roleTitle={sub.requirements?.title}
+                        />
                       </td>
                       <td>
                         {latestFollowUp ? (
