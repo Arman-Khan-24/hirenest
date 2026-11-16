@@ -1,5 +1,5 @@
 import type express from 'express';
-import { sendEmail } from './alertsEngine';
+import { sendEmailResult } from './alertsEngine';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   DEFAULT_TEMPLATES,
@@ -546,15 +546,14 @@ export function registerStaffRoutes(app: express.Express, deps: Deps): void {
       const actionLink = link.data?.properties?.action_link;
       if (!actionLink) {
         reasons.push(`link: ${link.error?.message || 'no link returned'}`);
-      } else if (!process.env.RESEND_API_KEY) {
-        reasons.push('Resend is not configured (RESEND_API_KEY missing)');
       } else {
-        sent = await sendEmail(
+        const out = await sendEmailResult(
           [prof.email],
           'Activate your HireNestOS account',
           `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and activate your HireNestOS account.</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 22px;background:#1F4CC4;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#667085">If you did not expect this, ignore this email.</p>`
         );
-        if (!sent) reasons.push('Resend rejected the email (check the sender domain is verified)');
+        sent = out.ok;
+        if (!out.ok) reasons.push(out.error || 'Resend failed');
       }
     }
     if (!sent) {

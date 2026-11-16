@@ -12,26 +12,40 @@ const SLA_WINDOW_MIN = 120; // vendor SLA after acknowledging a requirement
 const SLA_WARN_MIN = 30; // warn when this many minutes remain
 const MIN_MATCH = 70;
 
-export async function sendEmail(to: string[], subject: string, html: string): Promise<boolean> {
+export async function sendEmailResult(
+  to: string[],
+  subject: string,
+  html: string
+): Promise<{ ok: boolean; error?: string }> {
   const key = process.env.RESEND_API_KEY;
-  if (!key || to.length === 0) return false;
+  if (!key) return { ok: false, error: 'RESEND_API_KEY is not set on the server' };
+  if (to.length === 0) return { ok: false, error: 'No recipient' };
+  const from = process.env.ALERT_FROM_EMAIL || 'HireNest <alerts@os.hirenestworkforce.com>';
   try {
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        from: process.env.ALERT_FROM_EMAIL || 'HireNest <alerts@os.hirenestworkforce.com>',
-        to,
-        subject,
-        html,
-      }),
+      body: JSON.stringify({ from, to, subject, html }),
     });
-    if (!res.ok) console.warn('[sendEmail] Resend rejected the message:', res.status, (await res.text()).slice(0, 200));
-    return res.ok;
+    if (res.ok) return { ok: true };
+    const body = (await res.text()).slice(0, 300);
+    let detail = body;
+    try {
+      detail = (JSON.parse(body) as { message?: string }).message || body;
+    } catch {
+      /* keep raw body */
+    }
+    console.warn('[sendEmail] Resend rejected the message:', res.status, detail);
+    return { ok: false, error: `Resend ${res.status}: ${detail} (sender: ${from})` };
   } catch (e) {
-    console.warn('[sendEmail] Resend request failed:', e instanceof Error ? e.message : e);
-    return false;
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn('[sendEmail] Resend request failed:', msg);
+    return { ok: false, error: `Resend request failed: ${msg}` };
   }
+}
+
+export async function sendEmail(to: string[], subject: string, html: string): Promise<boolean> {
+  return (await sendEmailResult(to, subject, html)).ok;
 }
 
 /** Returns true if this dedupe key is new (and records it). */
