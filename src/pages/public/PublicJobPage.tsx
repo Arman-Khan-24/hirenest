@@ -19,6 +19,7 @@ import { applyToRequirementRpc } from '../../api/submissions';
 import { supabase } from '../../lib/supabase';
 import { parseJobDescription } from '../../lib/jobDescription';
 import { mapSupabaseError } from '../../lib/errors';
+import { formatSlaHours } from '../../lib/format';
 import { Button, Card, Dialog, Input } from '../../components/ui/kit';
 import { PublicNav, PUBLIC_FONT } from './PublicNav';
 
@@ -89,6 +90,7 @@ export const PublicJobPage: React.FC = () => {
     employment_type: (routeJobData.employment_type as 'full_time' | 'contract' | 'contract_to_hire' | 'part_time') || null,
     openings: typeof routeJobData.openings === 'number' ? routeJobData.openings : 1,
     currency: String(routeJobData.currency || 'INR'),
+    submission_sla_hours: typeof routeJobData.submission_sla_hours === 'number' ? routeJobData.submission_sla_hours : null,
     client_org_name: null,
     status: typeof routeJobData.status === 'string' ? routeJobData.status : undefined,
     posted_at: String(routeJobData.created_at || new Date().toISOString()),
@@ -188,6 +190,9 @@ export const PublicJobPage: React.FC = () => {
     { icon: <Briefcase className="h-4 w-4" />, label: 'Job type', value: empLabel },
     { icon: <Users className="h-4 w-4" />, label: 'Openings', value: `${job.openings}` },
     { icon: <Calendar className="h-4 w-4" />, label: 'Posted', value: formatPostedDate(job.posted_at) },
+    ...(job.submission_sla_hours
+      ? [{ icon: <Clock className="h-4 w-4" />, label: 'Submission SLA', value: formatSlaHours(job.submission_sla_hours) }]
+      : []),
     { icon: <Briefcase className="h-4 w-4" />, label: 'Notice', value: 'Negotiable' },
     { icon: <Building2 className="h-4 w-4" />, label: 'Compensation', value: 'On request' },
   ];

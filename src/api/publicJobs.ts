@@ -18,6 +18,8 @@ export interface PublicJob {
     | null;
   openings: number;
   currency: string;
+  /** Hours vendors have to submit candidates once the requirement is shared. */
+  submission_sla_hours?: number | null;
   client_org_name: string | null;
   status?: string;
   posted_at: string;

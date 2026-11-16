@@ -6,6 +6,14 @@ import {
   BUDGET_UNIT_METADATA,
 } from './enterpriseLifecycle';
 
+/** 48 -> "48 hours", 72 -> "3 days (72 hours)", 1 -> "1 hour". */
+export function formatSlaHours(hours: number | null | undefined): string {
+  if (typeof hours !== 'number' || !Number.isFinite(hours) || hours <= 0) return '-';
+  const unit = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+  if (hours >= 72 && hours % 24 === 0) return `${unit(hours / 24, 'day')} (${unit(hours, 'hour')})`;
+  return unit(hours, 'hour');
+}
+
 export function formatLocalDateTime(isoString: string | null | undefined): string {
   if (!isoString) return '-';
   try {

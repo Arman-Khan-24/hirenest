@@ -1715,7 +1715,7 @@ async function startServer() {
       const upper = `${upperHex}-0000-0000-0000-000000000000`;
 
       // Use direct fetch to PostgREST REST API with and() for UUID range query
-      const fields = 'id,slug,title,description,skills,min_experience,max_experience,location,work_mode,employment_type,openings,currency,status,created_at';
+      const fields = 'id,slug,title,description,skills,min_experience,max_experience,location,work_mode,employment_type,openings,currency,submission_sla_hours,status,created_at';
       const restUrl = `${supabaseUrl}/rest/v1/requirements?select=${fields}&and=(id.gte.${lower},id.lt.${upper})&limit=1`;
       const response = await fetch(restUrl, {
         headers: {
@@ -5676,7 +5676,7 @@ async function fetchShareableJobBySlug(slug: string): Promise<Record<string, unk
   const { data } = await admin
     .from('requirements')
     .select(
-      'id, slug, title, description, skills, min_experience, max_experience, location, work_mode, employment_type, openings, currency, status, client_org_id, opened_at, created_at'
+      'id, slug, title, description, skills, min_experience, max_experience, location, work_mode, employment_type, openings, currency, submission_sla_hours, status, client_org_id, opened_at, created_at'
     )
     .eq('slug', slug)
     .maybeSingle();
@@ -5698,6 +5698,7 @@ async function fetchShareableJobBySlug(slug: string): Promise<Record<string, unk
     employment_type: data.employment_type,
     openings: data.openings,
     currency: sanitizePublicCurrency(data.currency),
+    submission_sla_hours: data.submission_sla_hours ?? null,
     status: data.status,
     client_org_name: clientOrgName,
     posted_at: data.opened_at || data.created_at,

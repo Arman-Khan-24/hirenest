@@ -93,6 +93,7 @@ import {
   formatCurrency,
   formatLocalDate,
   formatLocalDateTime,
+  formatSlaHours,
   formatRequirementBudgetWithSubtitle,
   maskEmail,
   maskPhone,
@@ -997,7 +998,11 @@ export const VendorRequirementDetailPage: React.FC = () => {
         description={`${req.location} (${req.work_mode}) · ${formatExperienceRange(req.min_experience, req.max_experience)} · Vendor budget: ${budgetInfo.formatted}${budgetInfo.subtitle ? ` (${budgetInfo.subtitle})` : ''}`}
         actions={
           <div className="flex items-center gap-2">
-            {share && <SlaBadge dueAt={share.due_at} showCountdown />}
+            {share ? (
+              <SlaBadge dueAt={share.due_at} showCountdown />
+            ) : (
+              <Badge tone="neutral">SLA {formatSlaHours(req.submission_sla_hours)}</Badge>
+            )}
             {share && !share.acknowledged_at && (
               <Button onClick={handleAcknowledge} loading={acking}>
                 Acknowledge requirement
@@ -1199,9 +1204,28 @@ export const VendorRequirementDetailPage: React.FC = () => {
               </dd>
             </div>
             <div className="py-2 flex justify-between gap-2">
+              <dt className="text-[12px] text-[var(--text-secondary)]">Submission SLA</dt>
+              <dd className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
+                {formatSlaHours(req.submission_sla_hours)}
+              </dd>
+            </div>
+            <div className="py-2 flex justify-between gap-2">
               <dt className="text-[12px] text-[var(--text-secondary)]">SLA due</dt>
-              <dd className="font-mono tabular-nums text-[var(--text-primary)]">
-                {formatLocalDateTime(share?.due_at)}
+              <dd className="text-right">
+                {share ? (
+                  <>
+                    <div className="font-mono tabular-nums text-[var(--text-primary)]">
+                      {formatLocalDateTime(share.due_at)}
+                    </div>
+                    <div className="mt-1 flex justify-end">
+                      <SlaBadge dueAt={share.due_at} revokedAt={share.revoked_at} showCountdown />
+                    </div>
+                  </>
+                ) : (
+                  <span className="text-[12px] leading-[16px] text-[var(--text-tertiary)]">
+                    Starts when this is shared with you
+                  </span>
+                )}
               </dd>
             </div>
             <div className="py-2 flex justify-between gap-2">
