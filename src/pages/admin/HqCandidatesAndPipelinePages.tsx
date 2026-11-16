@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ScheduleInterviewModal } from '../../components/domain/InterviewModals';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle2, Plus, Upload, ExternalLink } from 'lucide-react';
+import { Bot, CheckCircle2, Plus, Upload, ExternalLink } from 'lucide-react';
 import {
   PageHeader,
   Button,
@@ -32,6 +32,7 @@ import {
   type RecruiterDecisionGate,
 } from '../../lib/recruiterValidation';
 import { MatchEvidencePanel } from '../../components/domain/MatchEvidence';
+import { AiInterviewPanel } from '../../components/domain/AiInterviewPanel';
 import { FitmentScoreCard } from '../../components/domain/FitmentScoreCard';
 import { CandidateFormModal } from '../../components/domain/CandidateFormModal';
 import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetailDrawer';
@@ -1710,7 +1711,8 @@ const CreateInterviewFlow: React.FC<{
   open: boolean;
   onClose: () => void;
   onScheduled: () => void;
-}> = ({ open, onClose, onScheduled }) => {
+  aiMode?: boolean;
+}> = ({ open, onClose, onScheduled, aiMode = false }) => {
   const [submissionId, setSubmissionId] = useState('');
   const [sourceType, setSourceType] = useState<'' | 'vendor' | 'direct' | 'internal'>('');
   const [groupId, setGroupId] = useState('');
@@ -1761,6 +1763,27 @@ const CreateInterviewFlow: React.FC<{
   const needsGroup = sourceType === 'vendor' || sourceType === 'internal';
 
   if (!open) return null;
+  if (chosen && aiMode) {
+    return (
+      <Dialog
+        open
+        onClose={() => {
+          setSubmissionId('');
+          setSourceType('');
+          setGroupId('');
+          onClose();
+        }}
+        title={`AI interview · ${chosen.candidates?.full_name || 'Candidate'}`}
+        description={chosen.requirements?.title || ''}
+        maxWidth="max-w-[760px]"
+      >
+        <AiInterviewPanel
+          submissionId={chosen.id}
+          candidateName={chosen.candidates?.full_name || 'The candidate'}
+        />
+      </Dialog>
+    );
+  }
   if (chosen) {
     return (
       <ScheduleInterviewModal
@@ -1788,7 +1811,7 @@ const CreateInterviewFlow: React.FC<{
     );
   }
   return (
-    <Dialog open onClose={onClose} title="Schedule interview">
+    <Dialog open onClose={onClose} title={aiMode ? 'New AI interview' : 'Schedule interview'}>
       <div className="space-y-3">
         <Select
           label="Candidate source"
@@ -1845,6 +1868,9 @@ const CreateInterviewFlow: React.FC<{
         )}
         <p className="text-[12px] text-[var(--text-tertiary)]">
           Pick the source first. Vendor candidates are grouped by vendor name; direct candidates are listed together.
+          {aiMode
+            ? 'The candidate gets a private link and answers adaptive written questions; you review an AI-drafted assessment afterwards. '
+            : ''}
           Interviews are created against a candidate submission, so submit the candidate to a requirement first if they are not listed.
         </p>
       </div>
@@ -1855,6 +1881,8 @@ const CreateInterviewFlow: React.FC<{
 export const HqInterviewsPage: React.FC = () => {
   const { toast } = useToast();
   const [createOpen, setCreateOpen] = useState(false);
+  const [aiCreateOpen, setAiCreateOpen] = useState(false);
+  const [aiRowTarget, setAiRowTarget] = useState<{ submissionId: string; candidateName: string; requirementTitle: string } | null>(null);
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<InterviewStatus | ''>('');
@@ -1901,8 +1929,33 @@ export const HqInterviewsPage: React.FC = () => {
       <PageHeader
         title="Interviews"
         description="Scheduled interview rounds and mandatory post-interview structured feedback."
-        actions={<Button onClick={() => setCreateOpen(true)}>Schedule interview</Button>}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" onClick={() => setAiCreateOpen(true)}>
+              <Bot className="h-3.5 w-3.5" />
+              AI interview
+            </Button>
+            <Button onClick={() => setCreateOpen(true)}>Schedule interview</Button>
+          </div>
+        }
       />
+      <CreateInterviewFlow
+        aiMode
+        open={aiCreateOpen}
+        onClose={() => setAiCreateOpen(false)}
+        onScheduled={() => setAiCreateOpen(false)}
+      />
+      {aiRowTarget && (
+        <Dialog
+          open
+          onClose={() => setAiRowTarget(null)}
+          title={`AI interview · ${aiRowTarget.candidateName}`}
+          description={aiRowTarget.requirementTitle}
+          maxWidth="max-w-[760px]"
+        >
+          <AiInterviewPanel submissionId={aiRowTarget.submissionId} candidateName={aiRowTarget.candidateName} />
+        </Dialog>
+      )}
       <CreateInterviewFlow
         open={createOpen}
         onClose={() => setCreateOpen(false)}
@@ -1986,7 +2039,7 @@ export const HqInterviewsPage: React.FC = () => {
       ) : !data?.data.length ? (
         <EmptyState
           title="No interviews found"
-          description="Schedule interviews from a candidate's pipeline submission drawer."
+          description="Schedule an interview, or start an AI interview, from this page or a candidate's submission drawer."
         />
       ) : (
         <div>
@@ -2039,6 +2092,20 @@ export const HqInterviewsPage: React.FC = () => {
                       </Badge>
                     </td>
                     <td className="text-right space-x-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() =>
+                          setAiRowTarget({
+                            submissionId: iv.submission_id,
+                            candidateName: iv.submissions?.candidates?.full_name || 'Candidate',
+                            requirementTitle: iv.submissions?.requirements?.title || '',
+                          })
+                        }
+                      >
+                        <Bot className="h-3.5 w-3.5" />
+                        AI interview
+                      </Button>
                       {iv.status === 'scheduled' && (
                         <>
                           <Button
