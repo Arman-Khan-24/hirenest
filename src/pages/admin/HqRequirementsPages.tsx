@@ -2438,10 +2438,20 @@ export const HqRequirementDetailPage: React.FC = () => {
                 {req.submission_sla_hours}h
               </span>
             </div>
-            {req.employment_type === 'full_time' && req.vendor_charge_pct != null && (
+            {req.vendor_charge_pct != null && (
               <div className="py-2 flex justify-between gap-2">
-                <span className="text-[var(--text-secondary)]">Vendor placement fee</span>
-                <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</span>
+                <span className="text-[var(--text-secondary)]">Vendor service fee</span>
+                <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
+                  {req.vendor_charge_pct}%{req.employment_type === 'full_time' ? ' of CTC' : ''}
+                </span>
+              </div>
+            )}
+            {financials?.notes && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <span className="text-[var(--text-secondary)]">Payment terms</span>
+                <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
+                  {financials.notes}
+                </span>
               </div>
             )}
             {hasBgvRequired(req) && (

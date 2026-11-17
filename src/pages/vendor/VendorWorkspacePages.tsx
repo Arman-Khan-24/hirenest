@@ -11,7 +11,7 @@ import {
 } from '../../components/domain/RequirementRibbon';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, Star, ShieldCheck } from 'lucide-react';
+import { Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, Star, ShieldCheck, CreditCard } from 'lucide-react';
 import {
   PageHeader,
   MetricStrip,
@@ -104,6 +104,7 @@ import {
   computeOfferOnboardingMetrics,
   fetchAllOfferOnboardingRecordsApi,
 } from '../../lib/offerOnboarding';
+import { parseRequirementMeta } from '../../lib/enterpriseLifecycle';
 import { computeFineTunedCandidateMatch } from '../../lib/matchingEngine';
 import { useToast } from '../../components/ui/Toast';
 import type {
@@ -1078,6 +1079,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
 
   const mySubmissions = submissionsData?.data || [];
   const budgetInfo = formatRequirementBudgetWithSubtitle(req);
+  const reqMeta = useMemo(() => parseRequirementMeta(req), [req]);
 
   return (
     <div className="max-w-[1200px]">
@@ -1300,6 +1302,17 @@ export const VendorRequirementDetailPage: React.FC = () => {
                   ))}
                 </div>
               </div>
+              {reqMeta.paymentTerms && (
+                <div className="pt-4 border-t border-[var(--border)] space-y-2">
+                  <h3 className="text-[12px] font-medium text-[var(--text-secondary)] flex items-center gap-1.5">
+                    <CreditCard className="h-4 w-4 text-[var(--text-secondary)]" />
+                    <span>Vendor Payment Terms &amp; Commercial Notes</span>
+                  </h3>
+                  <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 text-[13px] leading-relaxed text-[var(--text-primary)] font-medium">
+                    {reqMeta.paymentTerms}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1329,10 +1342,20 @@ export const VendorRequirementDetailPage: React.FC = () => {
                 {formatSlaHours(req.submission_sla_hours)}
               </dd>
             </div>
-            {req.employment_type === 'full_time' && req.vendor_charge_pct != null && (
+            {req.vendor_charge_pct != null && (
               <div className="py-2 flex justify-between gap-2">
-                <dt className="text-[12px] text-[var(--text-secondary)]">Placement fee</dt>
-                <dd className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</dd>
+                <dt className="text-[12px] text-[var(--text-secondary)]">Vendor service fee</dt>
+                <dd className="font-mono tabular-nums font-semibold text-[var(--text-primary)]">
+                  {req.vendor_charge_pct}%{req.employment_type === 'full_time' ? ' of CTC' : ''}
+                </dd>
+              </div>
+            )}
+            {reqMeta.paymentTerms && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">Payment terms</dt>
+                <dd className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
+                  {reqMeta.paymentTerms}
+                </dd>
               </div>
             )}
             {hasBgvRequired(req) && (
@@ -1382,6 +1405,20 @@ export const VendorRequirementDetailPage: React.FC = () => {
               </dd>
             </div>
           </dl>
+          {reqMeta.paymentTerms && (
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] flex items-center gap-1.5">
+                <CreditCard className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                <span>Payment terms &amp; notes</span>
+              </div>
+              <div className="text-[13px] font-medium text-[var(--text-primary)]">
+                {reqMeta.paymentTerms}
+              </div>
+              <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">
+                Commercial payment terms applicable to placing vendor agency.
+              </p>
+            </div>
+          )}
         </aside>
       </div>
 

@@ -37,6 +37,7 @@ export interface RequirementExtendedMeta {
   workingDaysPerMonth?: number | null;
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
+  paymentTerms?: string | null;
 }
 
 export interface RequirementExtras {
@@ -46,6 +47,7 @@ export interface RequirementExtras {
   workingDaysPerMonth?: number | null;
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
+  paymentTerms?: string | null;
 }
 
 export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras {
@@ -56,6 +58,7 @@ export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras
     workingDaysPerMonth: meta.workingDaysPerMonth ?? null,
     profileType: meta.profileType ?? null,
     hasBgv: meta.hasBgv ?? null,
+    paymentTerms: meta.paymentTerms ?? null,
   };
 }
 
@@ -472,6 +475,9 @@ export function encodeRequirementMetaToCurrency(params: {
   if (params.hasBgv !== undefined && params.hasBgv !== null) {
     encoded += `|bgv=${params.hasBgv ? '1' : '0'}`;
   }
+  if (params.paymentTerms && params.paymentTerms.trim() !== '') {
+    encoded += `|terms=${encodeURIComponent(params.paymentTerms.trim())}`;
+  }
   if (params.isDeleted) {
     const safeAt = encodeURIComponent(params.deletedAt || new Date().toISOString());
     const safeBy = encodeURIComponent(params.deletedBy || 'admin');
@@ -607,6 +613,15 @@ export function parseRequirementMeta(
     }
   }
 
+  let paymentTerms: string | null = null;
+  if (kv.terms) {
+    try {
+      paymentTerms = decodeURIComponent(kv.terms);
+    } catch {
+      paymentTerms = kv.terms;
+    }
+  }
+
   const result: RequirementExtendedMeta = {
     baseCurrency,
     budgetUnit,
@@ -630,6 +645,7 @@ export function parseRequirementMeta(
         : kv.bgv === '0' || kv.bgv === 'false'
           ? false
           : null,
+    paymentTerms,
   };
 
   if (reqId) {

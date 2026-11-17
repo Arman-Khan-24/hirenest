@@ -302,7 +302,7 @@ export const RequirementFormModal: React.FC<{
         ? String(initialFinancials.actual_client_budget)
         : ''
     );
-    setFinancialNotesInput(initialFinancials?.notes || '');
+    setFinancialNotesInput(initialFinancials?.notes || parsed.paymentTerms || '');
     setPlatformMarginInput(
       initialMargins?.platform_margin !== null && initialMargins?.platform_margin !== undefined
         ? String(initialMargins.platform_margin)
@@ -520,6 +520,7 @@ export const RequirementFormModal: React.FC<{
         category: effectiveCategory,
         profileType: profileType || null,
         hasBgv,
+        paymentTerms: financialNotesInput.trim() || null,
         hourlyRate: null,
         workingDaysPerMonth:
           budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
@@ -1004,13 +1005,13 @@ export const RequirementFormModal: React.FC<{
         {employmentType === 'full_time' && (
           <div className="mt-3">
             <Input
-              label="Vendor Placement Fee (% of CTC)"
+              label="Vendor service fee (% of CTC)"
               type="number"
               min={0}
               max={100}
               step={0.5}
-              placeholder="e.g. 4"
-              hint="Percentage of candidate CTC owed to the placing vendor upon hire. Visible to vendors only."
+              placeholder="e.g. 2"
+              hint="Percentage of candidate CTC owed to the placing vendor upon hire. Shown in vendor workspace as Vendor service fee."
               value={vendorChargePct}
               onChange={(e) => setVendorChargePct(e.target.value)}
             />
@@ -1195,8 +1196,8 @@ export const RequirementFormModal: React.FC<{
               }
             />
             <Input
-              label="Internal financial notes"
-              placeholder="Billing terms, rate card notes..."
+              label="Payment terms & financial notes (visible to vendors)"
+              placeholder="e.g. Net 30days, Net 45days, Net 60days..."
               value={financialNotesInput}
               onChange={(e) => {
                 financialsTouchedRef.current = true;
@@ -1204,8 +1205,8 @@ export const RequirementFormModal: React.FC<{
               }}
               hint={
                 financialNotesInput.trim()
-                  ? 'Saved to private requirement financials (Client & HQ only)'
-                  : 'Optional commercial terms, PO reference, or billing notes'
+                  ? 'Shown in vendor workspace right-side key facts under Payment terms & notes'
+                  : 'Standard vendor payment cycle (e.g. Net 30, Net 45, Net 60 days)'
               }
             />
           </div>
