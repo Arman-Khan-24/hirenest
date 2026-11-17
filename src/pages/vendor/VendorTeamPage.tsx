@@ -42,6 +42,7 @@ export const VendorTeamPage: React.FC = () => {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
+  const [createdInvite, setCreatedInvite] = useState<{ email: string; inviteLink: string; emailSent: boolean } | null>(null);
   const [form, setForm] = useState({ name: '', email: '', mobile: '', role: 'vendor_recruiter' as Member['role'] });
 
   const q = useQuery({
@@ -50,14 +51,34 @@ export const VendorTeamPage: React.FC = () => {
   });
 
   const invite = useMutation({
-    mutationFn: () => call('/api/vendor/team', { method: 'POST', body: JSON.stringify(form) }),
-    onSuccess: () => {
-      toast({ title: 'Invitation sent', description: `${form.email} will receive a link to set their password.`, tone: 'success' });
+    mutationFn: () => call<{ ok: boolean; userId: string; inviteLink?: string; emailSent?: boolean }>('/api/vendor/team', { method: 'POST', body: JSON.stringify(form) }),
+    onSuccess: (data) => {
       setOpen(false);
-      setForm({ name: '', email: '', mobile: '', role: 'vendor_recruiter' });
       qc.invalidateQueries({ queryKey: ['vendor_team'] });
+      if (data.inviteLink && !data.emailSent) {
+        setCreatedInvite({ email: form.email, inviteLink: data.inviteLink, emailSent: false });
+      } else if (data.inviteLink) {
+        setCreatedInvite({ email: form.email, inviteLink: data.inviteLink, emailSent: true });
+        toast({ title: 'Invitation sent', description: `${form.email} has been added.`, tone: 'success' });
+      } else {
+        toast({ title: 'Invitation sent', description: `${form.email} will receive a link to set their password.`, tone: 'success' });
+      }
+      setForm({ name: '', email: '', mobile: '', role: 'vendor_recruiter' });
     },
     onError: (e: Error) => toast({ title: 'Could not add user', description: e.message, tone: 'error' }),
+  });
+
+  const resendInvite = useMutation({
+    mutationFn: (userId: string) => call<{ ok: boolean; inviteLink?: string; emailSent?: boolean }>(`/api/vendor/team/${userId}/resend-invite`, { method: 'POST' }),
+    onSuccess: (data) => {
+      if (data.inviteLink) {
+        navigator.clipboard.writeText(data.inviteLink);
+        toast({ title: 'Invite link copied', description: 'Activation link copied to clipboard. Share it with your team member.', tone: 'success' });
+      } else {
+        toast({ title: 'Invitation sent', description: 'Password reset link has been dispatched.', tone: 'success' });
+      }
+    },
+    onError: (e: Error) => toast({ title: 'Could not generate invite link', description: e.message, tone: 'error' }),
   });
 
   const update = useMutation({
@@ -131,15 +152,25 @@ export const VendorTeamPage: React.FC = () => {
                     </td>
                     <td className="text-right">
                       {!isSelf && (
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() =>
-                            update.mutate({ id: m.id, body: { status: m.status === 'active' ? 'suspended' : 'active' } })
-                          }
-                        >
-                          {m.status === 'active' ? 'Suspend' : 'Reactivate'}
-                        </Button>
+                        <div className="flex items-center justify-end gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => resendInvite.mutate(m.id)}
+                            loading={resendInvite.isPending}
+                          >
+                            Copy invite link
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() =>
+                              update.mutate({ id: m.id, body: { status: m.status === 'active' ? 'suspended' : 'active' } })
+                            }
+                          >
+                            {m.status === 'active' ? 'Suspend' : 'Reactivate'}
+                          </Button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -170,6 +201,45 @@ export const VendorTeamPage: React.FC = () => {
             <Button disabled={!form.name.trim() || !emailOk || invite.isPending} onClick={() => invite.mutate()}>
               {invite.isPending ? 'Sending…' : 'Send invitation'}
             </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Direct Invite Link Modal */}
+      <Dialog
+        open={Boolean(createdInvite)}
+        onClose={() => setCreatedInvite(null)}
+        title="Team member added"
+        description={`Account ready for ${createdInvite?.email}.`}
+      >
+        <div className="space-y-4">
+          <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-[13px] space-y-2">
+            <p className="text-[var(--text-secondary)]">
+              {createdInvite?.emailSent
+                ? 'An invitation email was sent. You can also copy the activation link below to share directly:'
+                : 'User added successfully! Since automated email delivery is currently pending or rate-limited, please copy the direct activation link below and share it with your team member:'}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                readOnly
+                value={createdInvite?.inviteLink || ''}
+                className="font-mono text-[12px]"
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  if (createdInvite?.inviteLink) {
+                    navigator.clipboard.writeText(createdInvite.inviteLink);
+                    toast({ title: 'Link copied to clipboard!', tone: 'success' });
+                  }
+                }}
+              >
+                Copy Link
+              </Button>
+            </div>
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={() => setCreatedInvite(null)}>Done</Button>
           </div>
         </div>
       </Dialog>

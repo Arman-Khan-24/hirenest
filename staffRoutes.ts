@@ -307,15 +307,63 @@ export function registerStaffRoutes(app: express.Express, deps: Deps): void {
     }
 
     const redirectTo = `${process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com'}/reset-password`;
-    const { data: invite, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: name, signup_intent: 'staff' },
-      redirectTo,
-    });
-    if (invErr || !invite?.user) {
-      res.status(400).json({ error: invErr?.message || 'Could not send invitation.' });
+    let uid: string | null = null;
+    let inviteLink: string | null = null;
+    let emailSent = false;
+
+    // 1. Try standard invite
+    try {
+      const { data: invite, error: invErr } = await admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: name, signup_intent: 'staff' },
+        redirectTo,
+      });
+      if (!invErr && invite?.user) {
+        uid = invite.user.id;
+        emailSent = true;
+      }
+    } catch {
+      // proceed to generateLink fallback
+    }
+
+    // 2. Fallback to generateLink without requiring Supabase SMTP server
+    if (!uid) {
+      const linkRes = await admin.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: { data: { full_name: name, signup_intent: 'staff' }, redirectTo },
+      });
+      if (!linkRes.error && linkRes.data?.user) {
+        uid = linkRes.data.user.id;
+        inviteLink = linkRes.data.properties?.action_link || null;
+      } else {
+        const createRes = await admin.auth.admin.createUser({
+          email,
+          email_confirm: true,
+          user_metadata: { full_name: name, signup_intent: 'staff' },
+        });
+        if (createRes.data?.user) {
+          uid = createRes.data.user.id;
+          const recLink = await admin.auth.admin.generateLink({ type: 'recovery', email, options: { redirectTo } });
+          inviteLink = recLink.data?.properties?.action_link || null;
+        } else {
+          res.status(400).json({ error: linkRes.error?.message || createRes.error?.message || 'Could not create staff user.' });
+          return;
+        }
+      }
+    }
+
+    if (!uid) {
+      res.status(400).json({ error: 'Could not create staff user.' });
       return;
     }
-    const uid = invite.user.id;
+
+    if (inviteLink && !emailSent) {
+      void sendEmailResult(
+        [email],
+        'Activate your HireNestOS account',
+        `<p>Hi ${name},</p><p>You have been added to HireNest internal staff as <strong>${role}</strong>.</p><p><a href="${inviteLink}">Click here to set your password</a></p>`
+      );
+    }
 
     const { data: internalOrg } = await admin.from('organizations').select('id').eq('type', 'internal').maybeSingle();
     await admin.from('profiles').upsert(

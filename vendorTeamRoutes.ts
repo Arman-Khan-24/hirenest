@@ -1,5 +1,6 @@
 import type express from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { sendEmailResult } from './alertsEngine';
 
 type AuthOk = { ok: true; userId: string; role: string; orgId: string | null };
 type AuthResult = AuthOk | { ok: false; status: number; message: string };
@@ -92,15 +93,91 @@ export function registerVendorTeamRoutes(app: express.Express, deps: Deps): void
       return;
     }
     const redirectTo = `${process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com'}/reset-password`;
-    const { data: invite, error: invErr } = await ctx.admin.auth.admin.inviteUserByEmail(email, {
-      data: { full_name: name },
-      redirectTo,
-    });
-    if (invErr || !invite?.user) {
-      res.status(400).json({ error: invErr?.message || 'Could not send invitation.' });
+    let uid: string | null = null;
+    let inviteLink: string | null = null;
+    let emailSent = false;
+
+    // 1. Attempt standard invite via Supabase Auth (sends email if SMTP is configured)
+    try {
+      const { data: invite, error: invErr } = await ctx.admin.auth.admin.inviteUserByEmail(email, {
+        data: { full_name: name },
+        redirectTo,
+      });
+      if (!invErr && invite?.user) {
+        uid = invite.user.id;
+        emailSent = true;
+      } else {
+        console.warn('[vendor-team] inviteUserByEmail failed, using generateLink fallback:', invErr?.message);
+      }
+    } catch (e) {
+      console.warn('[vendor-team] inviteUserByEmail exception:', e);
+    }
+
+    // 2. Fallback: generateLink creates user in Auth & generates action link without requiring Supabase SMTP
+    if (!uid) {
+      const linkRes = await ctx.admin.auth.admin.generateLink({
+        type: 'invite',
+        email,
+        options: {
+          data: { full_name: name },
+          redirectTo,
+        },
+      });
+
+      if (!linkRes.error && linkRes.data?.user) {
+        uid = linkRes.data.user.id;
+        inviteLink = linkRes.data.properties?.action_link || null;
+      } else {
+        // If user already existed in auth, try recovery link or createUser
+        const recLink = await ctx.admin.auth.admin.generateLink({
+          type: 'recovery',
+          email,
+          options: { redirectTo },
+        });
+        if (recLink.data?.user) {
+          uid = recLink.data.user.id;
+          inviteLink = recLink.data.properties?.action_link || null;
+        } else {
+          const createRes = await ctx.admin.auth.admin.createUser({
+            email,
+            email_confirm: true,
+            user_metadata: { full_name: name },
+          });
+          if (createRes.data?.user) {
+            uid = createRes.data.user.id;
+            const recLink2 = await ctx.admin.auth.admin.generateLink({
+              type: 'recovery',
+              email,
+              options: { redirectTo },
+            });
+            inviteLink = recLink2.data?.properties?.action_link || null;
+          } else {
+            res.status(400).json({ error: linkRes.error?.message || createRes.error?.message || 'Could not create agency user.' });
+            return;
+          }
+        }
+      }
+    }
+
+    if (!uid) {
+      res.status(400).json({ error: 'Could not create agency user.' });
       return;
     }
-    const uid = invite.user.id;
+
+    // 3. Try sending email via Resend if inviteLink was generated and email wasn't delivered via Supabase
+    if (inviteLink && !emailSent) {
+      try {
+        const emailRes = await sendEmailResult(
+          [email],
+          `You've been invited to HireNest as ${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}`,
+          `<p>Hi ${name},</p><p>You have been invited to join your agency team on HireNest as a <strong>${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}</strong>.</p><p><a href="${inviteLink}" style="display:inline-block;background:#1D5FD1;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">Set your password & get started</a></p><p style="color:#6b7280;font-size:12px;">Or copy and paste this link into your browser:<br/><a href="${inviteLink}">${inviteLink}</a></p>`
+        );
+        if (emailRes.ok) emailSent = true;
+      } catch (e) {
+        console.warn('[vendor-team] Email send fallback failed:', e);
+      }
+    }
+
     const { error: pErr } = await ctx.admin.from('profiles').upsert(
       {
         id: uid,
@@ -118,7 +195,7 @@ export function registerVendorTeamRoutes(app: express.Express, deps: Deps): void
       return;
     }
     await audit(ctx.admin, { actorId: ctx.userId, targetUserId: uid, action: 'vendor_user_created', after: { email, role } });
-    res.json({ ok: true, userId: uid, invited: true });
+    res.json({ ok: true, userId: uid, invited: true, inviteLink, emailSent });
   });
 
   async function loadTarget(ctx: { admin: SupabaseClient; orgId: string }, id: string) {
@@ -192,6 +269,43 @@ export function registerVendorTeamRoutes(app: express.Express, deps: Deps): void
     }
     await audit(ctx.admin, { actorId: ctx.userId, targetUserId: id, action: 'vendor_user_updated', after: patch });
     res.json({ ok: true });
+  });
+
+  // Resend or regenerate invite link for an agency team member
+  app.post('/api/vendor/team/:id/resend-invite', async (req, res) => {
+    const ctx = await guard(req, res);
+    if (!ctx) return;
+    const target = await loadTarget(ctx, req.params.id);
+    if (!target) {
+      res.status(404).json({ error: 'Team member not found in your agency.' });
+      return;
+    }
+    const { data: prof } = await ctx.admin.from('profiles').select('email, full_name, role').eq('id', req.params.id).maybeSingle();
+    if (!prof?.email) {
+      res.status(400).json({ error: 'User does not have an email address.' });
+      return;
+    }
+    const redirectTo = `${process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com'}/reset-password`;
+    let inviteLink: string | null = null;
+    let emailSent = false;
+
+    const link = await ctx.admin.auth.admin.generateLink({
+      type: 'recovery',
+      email: prof.email,
+      options: { redirectTo },
+    });
+    inviteLink = link.data?.properties?.action_link || null;
+
+    if (inviteLink) {
+      const emailRes = await sendEmailResult(
+        [prof.email],
+        'Activate your HireNest agency account',
+        `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and access your HireNest agency account.</p><p><a href="${inviteLink}" style="display:inline-block;padding:10px 18px;background:#1D5FD1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#6b7280">Or copy and paste this link:<br/><a href="${inviteLink}">${inviteLink}</a></p>`
+      );
+      if (emailRes.ok) emailSent = true;
+    }
+
+    res.json({ ok: true, inviteLink, emailSent });
   });
 
   // Self-service share: a vendor who can SEE an open requirement in their workspace may submit to it.
