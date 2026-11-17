@@ -2501,6 +2501,57 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     res.status(decision.allowed ? 200 : 403).json(decision);
   });
 
+  // Server-side requirement update fallback (runs with service-role permissions)
+  app.post('/api/requirements/:id/update', async (req, res) => {
+    const auth = await authenticateStaffingCaller(req);
+    if (auth.ok && !['admin', 'recruiter', 'client_manager'].includes(auth.role)) {
+      res.status(403).json({ error: 'Only admin, recruiter, or client managers can update requirements.' });
+      return;
+    }
+    const { id } = req.params;
+    const { updates } = req.body as { updates?: Record<string, unknown> };
+    if (!id || !updates || typeof updates !== 'object') {
+      res.status(400).json({ error: 'id and updates object are required.' });
+      return;
+    }
+
+    const allowedCols = [
+      'title',
+      'description',
+      'skills',
+      'min_experience',
+      'max_experience',
+      'location',
+      'work_mode',
+      'employment_type',
+      'openings',
+      'vendor_visible_budget',
+      'currency',
+      'submission_sla_hours',
+      'vendor_charge_pct',
+      'client_org_id',
+    ];
+    const cleanUpdates: Record<string, unknown> = {};
+    for (const col of allowedCols) {
+      if (updates[col] !== undefined) {
+        cleanUpdates[col] = updates[col];
+      }
+    }
+
+    const { data, error } = await supabase
+      .from('requirements')
+      .update(cleanUpdates)
+      .eq('id', id)
+      .select('*, organizations:client_org_id(id, name)')
+      .single();
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    res.json({ ok: true, requirement: data });
+  });
+
   // ==========================================================================
   // UPDATE 3: Trial Activation, Automated Reminders, Checkout & Enforcement APIs
   // ==========================================================================

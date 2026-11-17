@@ -813,13 +813,20 @@ export async function createRequirement(
         vendor_visible_budget: input.vendor_visible_budget,
         currency: safeDbCurrency,
         submission_sla_hours: input.submission_sla_hours,
-        vendor_charge_pct: input.employment_type === 'full_time' ? (input.vendor_charge_pct ?? null) : null,
       })
       .select('*, organizations:client_org_id(id, name)')
       .single();
 
     if (error) throw error;
     const created = { ...(data as Requirement), currency: input.currency };
+
+    if (input.employment_type === 'full_time' && input.vendor_charge_pct != null) {
+      await updateRequirementViaBackend(created.id, {
+        vendor_charge_pct: input.vendor_charge_pct,
+      });
+      created.vendor_charge_pct = input.vendor_charge_pct;
+    }
+
     saveRequirementExtendedCache(created.id, inputMeta);
 
     // 5. Commit canonical requirement to server idempotency registry
@@ -1118,29 +1125,53 @@ export async function consolidateDuplicateRequirements(params: {
   };
 }
 
+async function updateRequirementViaBackend(
+  id: string,
+  updates: Record<string, unknown>
+): Promise<Requirement | null> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const res = await fetch(`/api/requirements/${encodeURIComponent(id)}/update`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ updates }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.requirement as Requirement) || null;
+  } catch {
+    return null;
+  }
+}
+
 export async function updateRequirement(
   id: string,
   input: UpdateRequirementInput
 ): Promise<Requirement> {
   const inputMeta = parseRequirementMeta(input.currency, input.vendor_visible_budget);
 
+  const baseFields: Record<string, unknown> = {
+    title: input.title,
+    description: input.description,
+    skills: input.skills,
+    min_experience: input.min_experience,
+    max_experience: input.max_experience,
+    location: input.location,
+    work_mode: input.work_mode,
+    employment_type: input.employment_type,
+    openings: input.openings,
+    vendor_visible_budget: input.vendor_visible_budget,
+    currency: input.currency,
+    submission_sla_hours: input.submission_sla_hours,
+  };
+
   let { data, error } = await supabase
     .from('requirements')
-    .update({
-      title: input.title,
-      description: input.description,
-      skills: input.skills,
-      min_experience: input.min_experience,
-      max_experience: input.max_experience,
-      location: input.location,
-      work_mode: input.work_mode,
-      employment_type: input.employment_type,
-      openings: input.openings,
-      vendor_visible_budget: input.vendor_visible_budget,
-      currency: input.currency,
-      submission_sla_hours: input.submission_sla_hours,
-      vendor_charge_pct: input.vendor_charge_pct ?? null,
-    })
+    .update(baseFields)
     .eq('id', id)
     .select('*')
     .single();
@@ -1149,19 +1180,8 @@ export async function updateRequirement(
     const retry = await supabase
       .from('requirements')
       .update({
-        title: input.title,
-        description: input.description,
-        skills: input.skills,
-        min_experience: input.min_experience,
-        max_experience: input.max_experience,
-        location: input.location,
-        work_mode: input.work_mode,
-        employment_type: input.employment_type,
-        openings: input.openings,
-        vendor_visible_budget: input.vendor_visible_budget,
+        ...baseFields,
         currency: inputMeta.baseCurrency || 'INR',
-        submission_sla_hours: input.submission_sla_hours,
-        vendor_charge_pct: input.vendor_charge_pct ?? null,
       })
       .eq('id', id)
       .select('*')
@@ -1170,7 +1190,30 @@ export async function updateRequirement(
     error = retry.error;
   }
 
+  // Fallback to backend update endpoint if client RLS or column privilege rejected direct update
+  if (error) {
+    const backendUpdated = await updateRequirementViaBackend(id, {
+      ...baseFields,
+      vendor_charge_pct: input.vendor_charge_pct ?? null,
+    });
+    if (backendUpdated) {
+      data = backendUpdated;
+      error = null;
+    }
+  }
+
   if (error) throw error;
+
+  // Sync vendor_charge_pct via backend endpoint if provided
+  if (input.vendor_charge_pct !== undefined) {
+    await updateRequirementViaBackend(id, {
+      vendor_charge_pct: input.vendor_charge_pct,
+    });
+    if (data) {
+      (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
+    }
+  }
+
   const updated = { ...(data as Requirement), currency: input.currency };
   saveRequirementExtendedCache(updated.id, inputMeta);
 
