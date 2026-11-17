@@ -225,6 +225,27 @@ const JD_SKILL_DETECTORS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'SAP BASIS', pattern: /\bsap\s+basis\b/i },
   { label: 'Machine Learning', pattern: /\bmachine\s+learning\b|\bdeep\s+learning\b|\bllm\b|\bgenai\b|\brag\b/i },
   { label: 'Solution Architecture', pattern: /\b(?:solution|cloud|enterprise|foundry|ai)\s+architect(?:ure)?\b/i },
+  // Sales, Business Development, Account Management & Presales
+  { label: 'Business Development', pattern: /\bbusiness\s+development\b|\bbd\b/i },
+  { label: 'Account Management', pattern: /\baccount\s+manage(?:ment|r)\b|\bkey\s+account\b|\bclient\s+partner\b/i },
+  { label: 'Technical Presales', pattern: /\b(?:technical\s+)?presales\b|\bpre-sales\b/i },
+  { label: 'B2B Sales', pattern: /\bb2b\s+sales\b|\benterprise\s+sales\b|\bsolution\s+sales\b/i },
+  { label: 'Solution Selling', pattern: /\bsolution\s+selling\b|\bconsultative\s+selling\b/i },
+  { label: 'Client Acquisition', pattern: /\bclient\s+acquisition\b|\bnew\s+business\s+acquisition\b/i },
+  { label: 'Client Relationship Management', pattern: /\bclient\s+relationships?\b|\bcustomer\s+relationships?\b/i },
+  { label: 'Lead Generation & Prospecting', pattern: /\blead\s+gen(?:eration)?\b|\bprospecting\b|\bqualified\s+leads\b/i },
+  { label: 'Deal Closing & Negotiation', pattern: /\bclose\s+deals\b|\bdeal\s+closing\b|\bcontract\s+negotiation\b/i },
+  { label: 'Revenue Growth & Pipeline', pattern: /\brevenue\s+growth\b|\bpipeline\s+manage(?:ment)?\b|\bcross[- ]selling\b/i },
+  { label: 'Stakeholder Management', pattern: /\bstakeholder\s+manage(?:ment)?\b|\bclient\s+engagement\b/i },
+  { label: 'Cloud & IT Services', pattern: /\bcloud\s+(?:and\s+)?it\s+services\b|\bit\s+managed\s+services\b|\bmanaged\s+services\b|\bnaas\b|\bsaas\b/i },
+  // Enterprise Applications & Systems
+  { label: 'ServiceNow', pattern: /\bservicenow\b/i },
+  { label: 'ServiceNow GRC / IRM', pattern: /\bgrc\b|\birm\b|\bgovernance(?:,\s*|\s+and\s+)risk\b/i },
+  { label: 'Workday', pattern: /\bworkday\b/i },
+  { label: 'Salesforce', pattern: /\bsalesforce\b|\bsfdc\b/i },
+  { label: 'Project Management', pattern: /\bproject\s+manage(?:ment|r)\b|\bpmp\b|\bscrum\b|\bagile\b/i },
+  { label: 'Product Management', pattern: /\bproduct\s+manage(?:ment|r)\b/i },
+  { label: 'Cybersecurity', pattern: /\bcybersecurity\b|\binformation\s+security\b|\bsiem\b|\bsoc\b/i },
 ];
 
 /**
@@ -236,6 +257,115 @@ const SKILL_SYNONYM_CLUSTERS: Array<{
   strongEquivalents: RegExp[];
   partialEquivalents: RegExp[];
 }> = [
+  {
+    triggers: [/\bbusiness\s+development\b/i, /\bbd\b/i, /\bclient\s+acquisition\b/i],
+    strongEquivalents: [
+      /\bbusiness\s+development\b/i,
+      /\bbd\b/i,
+      /\bclient\s+acquisition\b/i,
+      /\bnew\s+business\b/i,
+      /\baccount\s+management\b/i,
+      /\bsolution\s+selling\b/i,
+      /\bb2b\s+sales\b/i,
+    ],
+    partialEquivalents: [
+      /\bsales\b/i,
+      /\blead\s+gen/i,
+      /\bprospecting\b/i,
+      /\bcustomer\s+relationship/i,
+      /\bdeal\s+closing\b/i,
+      /\bclient\s+partner\b/i,
+    ],
+  },
+  {
+    triggers: [/\baccount\s+manage/i, /\bclient\s+relationship/i, /\bclient\s+partner/i],
+    strongEquivalents: [
+      /\baccount\s+manage/i,
+      /\bclient\s+relationship/i,
+      /\bclient\s+partner\b/i,
+      /\bcustomer\s+success\b/i,
+      /\bkey\s+account\b/i,
+      /\bclient\s+retention\b/i,
+    ],
+    partialEquivalents: [
+      /\bbusiness\s+development\b/i,
+      /\bcross[- ]selling\b/i,
+      /\bupselling\b/i,
+      /\bstakeholder\s+manage/i,
+      /\bsales\b/i,
+    ],
+  },
+  {
+    triggers: [/\b(?:technical\s+)?presales\b/i, /\bpre-sales\b/i],
+    strongEquivalents: [
+      /\bpresales\b/i,
+      /\bpre-sales\b/i,
+      /\brfp\b/i,
+      /\brfi\b/i,
+      /\btechnical\s+sales\b/i,
+      /\bsolution\s+architect/i,
+      /\bproof\s+of\s+concept\b/i,
+      /\bpoc\b/i,
+    ],
+    partialEquivalents: [
+      /\bclient\s+presentation\b/i,
+      /\bdemo\b/i,
+      /\bsolution\s+design\b/i,
+      /\bcloud\b/i,
+    ],
+  },
+  {
+    triggers: [/\bservicenow\b/i],
+    strongEquivalents: [
+      /\bservicenow\b/i,
+      /\bsnow\b/i,
+      /\bnow\s+platform\b/i,
+      /\bservicenow\s+developer\b/i,
+      /\bservicenow\s+admin\b/i,
+    ],
+    partialEquivalents: [
+      /\bitsm\b/i,
+      /\bitom\b/i,
+      /\bgrc\b/i,
+      /\birm\b/i,
+      /\bcmdb\b/i,
+      /\bjavascript\b/i,
+    ],
+  },
+  {
+    triggers: [/\bgrc\b/i, /\birm\b/i, /\bgovernance(?:,\s*|\s+and\s+)risk\b/i],
+    strongEquivalents: [
+      /\bgrc\b/i,
+      /\birm\b/i,
+      /\bgovernance\b/i,
+      /\brisk\s+management\b/i,
+      /\bcompliance\b/i,
+    ],
+    partialEquivalents: [
+      /\bservicenow\b/i,
+      /\baudit\b/i,
+      /\bpolicy\b/i,
+      /\bsecurity\b/i,
+    ],
+  },
+  {
+    triggers: [/\bcloud\s+(?:and\s+)?it\s+services\b/i, /\bit\s+managed\s+services\b/i, /\bmanaged\s+services\b/i],
+    strongEquivalents: [
+      /\bcloud\s+(?:infrastructure|services?)\b/i,
+      /\bmanaged\s+services\b/i,
+      /\bit\s+services\b/i,
+      /\bsaas\b/i,
+      /\bnaas\b/i,
+      /\biaas\b/i,
+    ],
+    partialEquivalents: [
+      /\bazure\b/i,
+      /\baws\b/i,
+      /\bgcp\b/i,
+      /\bcloud\b/i,
+      /\btelecom\b/i,
+    ],
+  },
   {
     triggers: [/\bbicep\b/i, /\barm\s+template/i],
     strongEquivalents: [
@@ -614,6 +744,91 @@ export function extractCandidateProfileSignals(candidate: Candidate): {
   };
 }
 
+const LOCATION_WORDS = new Set([
+  'bangalore', 'bengaluru', 'mumbai', 'pune', 'hyderabad', 'delhi', 'noida', 'gurgaon', 'gurugram',
+  'chennai', 'kolkata', 'remote', 'hybrid', 'onsite', 'bang', 'hyd'
+]);
+
+const ROLE_SUFFIXES = /\b(?:manager|executive|developer|engineer|specialist|consultant|associate|lead|director|architect|analyst)\b/gi;
+const SENIORITY_PREFIXES = /\b(?:senior|sr\.?|junior|jr\.?|principal|staff|lead|chief|head\s+of)\b/gi;
+
+export function extractSkillsFromJobTitle(rawTitle: string): string[] {
+  if (!rawTitle || typeof rawTitle !== 'string') return [];
+  // Clean out parenthesis containing locations like (Bang), (Pune / Hyderabad)
+  const cleaned = rawTitle.replace(/\(([^)]+)\)/g, (_match, inner) => {
+    const lowerInner = inner.toLowerCase();
+    const isLocation = Array.from(LOCATION_WORDS).some((loc) => lowerInner.includes(loc));
+    return isLocation ? '' : inner;
+  });
+
+  // Split by slashes, dashes, ampersands, commas
+  const segments = cleaned
+    .split(/[/|&–—,-]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+  const skills: string[] = [];
+  const seen = new Set<string>();
+
+  for (const seg of segments) {
+    const lower = seg.toLowerCase().trim();
+    if (lower.length < 2 || LOCATION_WORDS.has(lower)) continue;
+
+    if (/\bbusiness\s+development\b/i.test(seg) && !seen.has('business development')) {
+      seen.add('business development');
+      skills.push('Business Development');
+    }
+    if (/\baccount\s+manage/i.test(seg) && !seen.has('account management')) {
+      seen.add('account management');
+      skills.push('Account Management');
+    }
+    if (/\b(?:technical\s+)?presales\b/i.test(seg) && !seen.has('technical presales')) {
+      seen.add('technical presales');
+      skills.push('Technical Presales');
+    }
+    if (/\bservicenow\b/i.test(seg) && !seen.has('servicenow')) {
+      seen.add('servicenow');
+      skills.push('ServiceNow');
+    }
+    if ((/\bgrc\b/i.test(seg) || /\birm\b/i.test(seg)) && !seen.has('grc / irm')) {
+      seen.add('grc / irm');
+      skills.push('GRC / IRM');
+    }
+    if (/\bsolution\s+architect/i.test(seg) && !seen.has('solution architecture')) {
+      seen.add('solution architecture');
+      skills.push('Solution Architecture');
+    }
+    if (/\bsnowflake\b/i.test(seg) && !seen.has('snowflake')) {
+      seen.add('snowflake');
+      skills.push('Snowflake');
+    }
+    if (/\bdata\s+engineer/i.test(seg) && !seen.has('data engineering')) {
+      seen.add('data engineering');
+      skills.push('Data Engineering');
+    }
+    if (/\bworkday\b/i.test(seg) && !seen.has('workday')) {
+      seen.add('workday');
+      skills.push('Workday');
+    }
+
+    // Generic strip: strip seniority and suffixes to get the core capability
+    const stripped = seg
+      .replace(SENIORITY_PREFIXES, '')
+      .replace(ROLE_SUFFIXES, '')
+      .trim();
+
+    if (stripped.length >= 3 && !seen.has(stripped.toLowerCase())) {
+      const lowerStripped = stripped.toLowerCase();
+      if (!LOCATION_WORDS.has(lowerStripped)) {
+        seen.add(lowerStripped);
+        skills.push(stripped);
+      }
+    }
+  }
+
+  return skills;
+}
+
 /**
  * Extracts normalized atomic requirement skills from the Requirement's `skills` array,
  * plus core skills mentioned in `title` and `description`.
@@ -625,28 +840,35 @@ export function extractRequirementAtomicSkills(
   // Skills defined on the requirement are the single source of truth. Only when none were
   // defined do we fall back to inferring skills from the title/description.
   if (decomposed.length > 0) return decomposed;
-  const seen = new Set(decomposed.map((s) => s.toLowerCase()));
+  const seen = new Set<string>();
 
   const titleAndDesc = `${requirement.title || ''} ${requirement.description || ''}`;
+
+  // 1. Detect skills in title
   for (const detector of JD_SKILL_DETECTORS) {
     if (detector.pattern.test(requirement.title || '') && !seen.has(detector.label.toLowerCase())) {
-      const alreadyCovered = decomposed.some(
-        (existing) =>
-          existing.toLowerCase().includes(detector.label.toLowerCase()) ||
-          detector.label.toLowerCase().includes(existing.toLowerCase())
-      );
-      if (!alreadyCovered) {
-        seen.add(detector.label.toLowerCase());
-        decomposed.unshift(detector.label);
-      }
+      seen.add(detector.label.toLowerCase());
+      decomposed.push(detector.label);
     }
   }
 
-  if (decomposed.length === 0 && titleAndDesc.trim()) {
+  // 2. Also detect skills from description
+  if (titleAndDesc.trim()) {
     for (const detector of JD_SKILL_DETECTORS) {
       if (detector.pattern.test(titleAndDesc) && !seen.has(detector.label.toLowerCase())) {
         seen.add(detector.label.toLowerCase());
         decomposed.push(detector.label);
+      }
+    }
+  }
+
+  // 3. Fallback: extract core skills from title structure if still few or none detected
+  if (decomposed.length < 3 && requirement.title?.trim()) {
+    const titleSkills = extractSkillsFromJobTitle(requirement.title);
+    for (const s of titleSkills) {
+      if (!seen.has(s.toLowerCase())) {
+        seen.add(s.toLowerCase());
+        decomposed.push(s);
       }
     }
   }

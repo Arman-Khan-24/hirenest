@@ -1,6 +1,6 @@
 import type { Submission } from '../types/db';
 import type { BadgeTone } from '../components/ui/kit';
-import { computeFineTunedCandidateMatch } from './matchingEngine';
+import { computeFineTunedCandidateMatch, extractRequirementAtomicSkills } from './matchingEngine';
 import {
   reviewSubmissionAssessmentRpc,
   recordValidationInterviewRpc,
@@ -401,7 +401,16 @@ export function buildSubmissionValidationRecord(
   const req = submission.requirements;
   const cand = submission.candidates;
 
-  const reqSkills = req?.skills || [];
+  // Derive atomic JD skills from requirement definition or infer from title & description
+  const atomicReqSkills = extractRequirementAtomicSkills(
+    req || {
+      id: submission.requirement_id,
+      title: '',
+      description: '',
+      skills: req?.skills || [],
+    }
+  );
+  const reqSkills = atomicReqSkills.length > 0 ? atomicReqSkills : (req?.skills || []);
   const candSkills = cand?.skills || [];
   const candSummary = cand?.summary || '';
 
@@ -453,6 +462,8 @@ export function buildSubmissionValidationRecord(
   }
 
   const matchedLower = new Set(matchCalc.matchedSkills.map((s) => s.toLowerCase().trim()));
+  const candSkillsLower = new Set(candSkills.map((s) => s.toLowerCase().trim()));
+  const candSummaryLower = candSummary.toLowerCase();
 
   const skillsMatrix: SkillEvidenceItem[] = reqSkills.map((sk, idx) => {
     const key = sk.toLowerCase().trim();
@@ -464,8 +475,11 @@ export function buildSubmissionValidationRecord(
       return { ...prev, category };
     }
 
-    if (matchedLower.has(key)) {
-      const inSummary = candSummary.toLowerCase().includes(key);
+    const inSummary = candSummaryLower.includes(key);
+    const inCandSkills = candSkillsLower.has(key);
+    const isDirectMatch = matchedLower.has(key) || inCandSkills;
+
+    if (isDirectMatch || inSummary) {
       return {
         skill: sk,
         category,
@@ -477,8 +491,9 @@ export function buildSubmissionValidationRecord(
       };
     }
 
+    const firstWord = key.split(' ')[0];
     const partialInSummary =
-      candSummary.toLowerCase().includes(key.split(' ')[0]) && key.split(' ').length > 1;
+      firstWord.length >= 4 && candSummaryLower.includes(firstWord) && key.split(' ').length > 1;
 
     return {
       skill: sk,

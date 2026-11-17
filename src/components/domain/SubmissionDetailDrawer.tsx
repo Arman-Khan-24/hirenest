@@ -202,8 +202,12 @@ export const SubmissionDetailDrawer: React.FC<{
     let cancelled = false;
     fetchSubmissionValidationApi(submission).then((loaded) => {
       if (!cancelled) {
-        setValRecord(loaded);
-        setFollowUpResponseNotes(loaded.followUp.responseNotes || '');
+        let finalRecord = loaded;
+        if (!loaded.matchSummary?.skills || loaded.matchSummary.skills.length === 0) {
+          finalRecord = buildSubmissionValidationRecord(submission, loaded);
+        }
+        setValRecord(finalRecord);
+        setFollowUpResponseNotes(finalRecord.followUp.responseNotes || '');
       }
     });
     return () => {
@@ -251,7 +255,11 @@ export const SubmissionDetailDrawer: React.FC<{
     bumpVersion?: string
   ): SubmissionValidationRecord => {
     if (!submission) return baseRecord;
-    const skills = baseRecord.matchSummary.skills;
+    let effective = baseRecord;
+    if (!effective.matchSummary.skills || effective.matchSummary.skills.length === 0) {
+      effective = buildSubmissionValidationRecord(submission, baseRecord);
+    }
+    const skills = effective.matchSummary.skills;
     const verifiedCount = skills.filter(
       (s) =>
         s.status === 'matched' ||
@@ -261,14 +269,14 @@ export const SubmissionDetailDrawer: React.FC<{
     const nextSkillScore =
       skills.length > 0
         ? Math.round((verifiedCount / skills.length) * 100)
-        : baseRecord.matchSummary.skillScore;
+        : effective.matchSummary.skillScore;
     const nextJdMatch = Math.min(
       100,
       Math.round(
         0.4 * nextSkillScore +
-          0.25 * baseRecord.matchSummary.experienceScore +
-          0.2 * baseRecord.matchSummary.domainScore +
-          0.15 * baseRecord.matchSummary.seniorityScore
+          0.25 * effective.matchSummary.experienceScore +
+          0.2 * effective.matchSummary.domainScore +
+          0.15 * effective.matchSummary.seniorityScore
       )
     );
     const missingNow = skills
@@ -281,7 +289,7 @@ export const SubmissionDetailDrawer: React.FC<{
           ]
         : ['All JD skills verified or confirmed with evidence.'];
 
-    const nextVersion = bumpVersion || baseRecord.matchSummary.resumeVersion;
+    const nextVersion = bumpVersion || effective.matchSummary.resumeVersion;
     const nextVersions = bumpVersion
       ? [
           {
@@ -292,14 +300,14 @@ export const SubmissionDetailDrawer: React.FC<{
             matchScoreAtVersion: nextJdMatch,
             notes: `Updated evidence / resume version (${bumpVersion}) analyzed.`,
           },
-          ...baseRecord.resumeVersions,
+          ...effective.resumeVersions,
         ]
-      : baseRecord.resumeVersions;
+      : effective.resumeVersions;
 
     return {
-      ...baseRecord,
+      ...effective,
       matchSummary: {
-        ...baseRecord.matchSummary,
+        ...effective.matchSummary,
         jdMatchPercentage: nextJdMatch,
         skillScore: nextSkillScore,
         parsingWarnings: nextWarnings,
