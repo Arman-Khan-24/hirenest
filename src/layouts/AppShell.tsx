@@ -337,7 +337,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
             { label: 'Dashboard', to: '/vendor', icon: LayoutDashboard },
             { label: 'Open requirements', to: '/vendor/requirements', icon: Briefcase },
             { label: 'Candidates', to: '/vendor/candidates', icon: Users },
-            { label: 'Match intelligence', to: '/vendor/matches', icon: Sparkles },
+            { label: 'Match requirements', to: '/vendor/matches', icon: Sparkles },
             { label: 'Submissions', to: '/vendor/submissions', icon: GitPullRequest },
             { label: 'Interviews', to: '/vendor/interviews', icon: Calendar },
             { label: 'Offers', to: '/vendor/offers', icon: ClipboardCheck },

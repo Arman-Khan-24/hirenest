@@ -139,6 +139,9 @@ export const RequirementFormModal: React.FC<{
   const [employmentType, setEmploymentType] = useState<EmploymentType>(
     initialRequirement?.employment_type || 'full_time'
   );
+  const [vendorChargePct, setVendorChargePct] = useState<string>(
+    initialRequirement?.vendor_charge_pct != null ? String(initialRequirement.vendor_charge_pct) : ''
+  );
   const [currency, setCurrency] = useState<string>(initialMeta.baseCurrency || 'INR');
 
   const [fieldErrors, setFieldErrors] = useState< Partial<Record<string, string>> >({});
@@ -249,6 +252,9 @@ export const RequirementFormModal: React.FC<{
     setLocation(initialRequirement?.location || '');
     setWorkMode(initialRequirement?.work_mode || 'hybrid');
     setEmploymentType(initialRequirement?.employment_type || 'full_time');
+    setVendorChargePct(
+      initialRequirement?.vendor_charge_pct != null ? String(initialRequirement.vendor_charge_pct) : ''
+    );
     setCurrency(parsed.baseCurrency || 'INR');
     setFieldErrors({});
 
@@ -525,6 +531,7 @@ export const RequirementFormModal: React.FC<{
           vendor_visible_budget: vendorVisibleNumeric,
           currency: encodedCurrency,
           submission_sla_hours: values.submission_sla_hours,
+          vendor_charge_pct: values.employment_type === 'full_time' && vendorChargePct !== '' ? Number(vendorChargePct) : null,
         });
       } else {
         savedReq = await createRequirement({
@@ -541,6 +548,7 @@ export const RequirementFormModal: React.FC<{
           vendor_visible_budget: vendorVisibleNumeric,
           currency: encodedCurrency,
           submission_sla_hours: values.submission_sla_hours,
+          vendor_charge_pct: values.employment_type === 'full_time' && vendorChargePct !== '' ? Number(vendorChargePct) : null,
         });
       }
       savedRequirementRef.current = savedReq;
@@ -957,6 +965,22 @@ export const RequirementFormModal: React.FC<{
             ]}
           />
         </div>
+        {/* Vendor Placement Fee — only for FTE requirements, visible to admins/recruiters */}
+        {employmentType === 'full_time' && (
+          <div className="mt-3">
+            <Input
+              label="Vendor Placement Fee (% of CTC)"
+              type="number"
+              min={0}
+              max={100}
+              step={0.5}
+              placeholder="e.g. 4"
+              hint="Percentage of candidate CTC owed to the placing vendor upon hire. Visible to vendors only."
+              value={vendorChargePct}
+              onChange={(e) => setVendorChargePct(e.target.value)}
+            />
+          </div>
+        )}
 
         {/* Budget Unit Selection (LPA - annual / LPM - monthly) & Financial Governance */}
         <div className="pt-3 border-t border-[var(--border)] space-y-3.5">

@@ -103,13 +103,51 @@ import {
   computeOfferOnboardingMetrics,
   fetchAllOfferOnboardingRecordsApi,
 } from '../../lib/offerOnboarding';
+import { computeFineTunedCandidateMatch } from '../../lib/matchingEngine';
 import { useToast } from '../../components/ui/Toast';
 import type {
+  Candidate,
+  Requirement,
   CandidateContacts,
   CandidateMatch,
   FeedbackKind,
   SubmissionStage,
 } from '../../types/db';
+
+function buildCandidateMatchRecord(requirement: Requirement, candidate: Candidate): CandidateMatch {
+  const fineTuned = computeFineTunedCandidateMatch(requirement, candidate);
+  return {
+    id: `${requirement.id}_${candidate.id}`,
+    requirement_id: requirement.id,
+    candidate_id: candidate.id,
+    computed_score: fineTuned.computed_score,
+    skill_score: fineTuned.skill_score,
+    experience_score: fineTuned.experience_score,
+    domain_score: fineTuned.domain_score,
+    seniority_score: fineTuned.seniority_score,
+    override_score: null,
+    final_score: fineTuned.final_score,
+    matched_skills: fineTuned.matched_skills,
+    unproven_skills: fineTuned.unproven_skills,
+    experience_note: fineTuned.experience_note,
+    evidence: {
+      engine: 'v2.2-4d-weighted',
+      formula: '0.40*S + 0.25*E + 0.20*D + 0.15*N',
+      skill_score: fineTuned.skill_score,
+      experience_score: fineTuned.experience_score,
+      domain_score: fineTuned.domain_score,
+      seniority_score: fineTuned.seniority_score,
+      dimensions: fineTuned.dimensions,
+    },
+    engine_version: 'v2.2-4d-weighted',
+    calculated_at: new Date().toISOString(),
+    override_reason: null,
+    overridden_by: null,
+    overridden_at: null,
+    candidates: candidate,
+    requirements: requirement,
+  };
+}
 
 // 1. Vendor Dashboard
 export const VendorDashboardPage: React.FC = () => {
@@ -882,6 +920,15 @@ export const VendorRequirementDetailPage: React.FC = () => {
   const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
   const [showNdaAlert, setShowNdaAlert] = useState(false);
 
+  // Manual candidate mapping state (submitting candidate from vendor pool to this requirement)
+  const [manualCandOpen, setManualCandOpen] = useState(false);
+  const [manualCandList, setManualCandList] = useState<Candidate[]>([]);
+  const [manualCandLoading, setManualCandLoading] = useState(false);
+  const [manualSelectedCandId, setManualSelectedCandId] = useState('');
+  const [manualCandNotes, setManualCandNotes] = useState('');
+  const [manualCandSubmitting, setManualCandSubmitting] = useState(false);
+  const [manualCandDupReason, setManualCandDupReason] = useState<string | null>(null);
+
   const { data: req, isLoading } = useQuery({
     queryKey: ['vendor_req_detail', id, profile?.role, profile?.org_id],
     queryFn: () =>
@@ -986,6 +1033,46 @@ export const VendorRequirementDetailPage: React.FC = () => {
     }
   };
 
+  const openCandidateMap = async () => {
+    setManualCandOpen(true);
+    setManualCandLoading(true);
+    setManualSelectedCandId('');
+    setManualCandNotes('');
+    setManualCandDupReason(null);
+    try {
+      const res = await fetchCandidates({ ownerVendorOrgId: profile?.org_id, pageSize: 200 });
+      setManualCandList(res.data);
+    } catch {
+      toast({ title: 'Could not load your candidates', tone: 'error' });
+    } finally {
+      setManualCandLoading(false);
+    }
+  };
+
+  const handleManualCandSubmit = async () => {
+    if (!manualSelectedCandId || !id) return;
+    setManualCandSubmitting(true);
+    try {
+      const res = await submitCandidateRpc({
+        p_requirement_id: id,
+        p_candidate_id: manualSelectedCandId,
+        p_notes: manualCandNotes.trim() || null,
+      });
+      if (res.status === 'duplicate') {
+        setManualCandDupReason(res.reason ?? 'Already submitted to this requirement.');
+        return;
+      }
+      toast({ title: 'Candidate submitted successfully', tone: 'success' });
+      setManualCandOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['vendor_req_submissions', id] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_req_matches', id] });
+    } catch (err) {
+      toast({ title: 'Submission failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setManualCandSubmitting(false);
+    }
+  };
+
   if (isLoading || !req) return <TableSkeleton rows={5} cols={4} />;
 
   const mySubmissions = submissionsData?.data || [];
@@ -1041,8 +1128,19 @@ export const VendorRequirementDetailPage: React.FC = () => {
               <EmptyState
                 title="No matching candidates in your pool yet"
                 description="Add candidates with matching skills in your Candidate Pool to see ranked matches here."
+                action={
+                  <Button size="sm" variant="outline" onClick={openCandidateMap}>
+                    Submit a candidate manually
+                  </Button>
+                }
               />
             ) : (
+              <>
+                <div className="flex justify-end pb-2">
+                  <Button size="sm" variant="outline" onClick={openCandidateMap}>
+                    + Submit candidate manually
+                  </Button>
+                </div>
               <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
                 {matchesData.data.map((m, idx) => {
                   const alreadySubmitted = mySubmissions.some(
@@ -1113,6 +1211,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
                   );
                 })}
               </div>
+              </>
             )
           )}
 
@@ -1210,6 +1309,12 @@ export const VendorRequirementDetailPage: React.FC = () => {
                 {formatSlaHours(req.submission_sla_hours)}
               </dd>
             </div>
+            {req.employment_type === 'full_time' && req.vendor_charge_pct != null && (
+              <div className="py-2 flex justify-between gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">Placement fee</dt>
+                <dd className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</dd>
+              </div>
+            )}
             <div className="py-2 flex justify-between gap-2">
               <dt className="text-[12px] text-[var(--text-secondary)]">SLA due</dt>
               <dd className="text-right">
@@ -1325,6 +1430,102 @@ export const VendorRequirementDetailPage: React.FC = () => {
             </Button>
           </div>
         </div>
+      </Dialog>
+
+      {/* Manual Candidate Mapping Dialog */}
+      <Dialog
+        open={manualCandOpen}
+        onClose={() => setManualCandOpen(false)}
+        title="Submit a candidate to this requirement"
+        description="Pick any candidate from your agency pool to map and submit directly."
+        maxWidth="max-w-[560px]"
+      >
+        {manualCandDupReason ? (
+          <div className="space-y-4">
+            <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">
+              ⚠️ Already submitted: {manualCandDupReason}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => { setManualCandDupReason(null); setManualSelectedCandId(''); }}>
+                Try another candidate
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setManualCandOpen(false)}>Close</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {manualCandLoading ? (
+              <div className="text-[13px] text-[var(--text-secondary)] py-4 text-center">Loading your candidates…</div>
+            ) : (
+              <>
+                <Select
+                  label="Select candidate"
+                  value={manualSelectedCandId}
+                  onChange={(e) => setManualSelectedCandId(e.target.value)}
+                  options={[
+                    { value: '', label: '— Choose a candidate from your pool —' },
+                    ...manualCandList.map((c) => ({
+                      value: c.id,
+                      label: `${c.full_name}${c.current_title ? ` · ${c.current_title}` : ''}${c.total_experience_years != null ? ` · ${c.total_experience_years} yrs` : ''}`,
+                    })),
+                  ]}
+                />
+                {(() => {
+                  const selCand = manualCandList.find((c) => c.id === manualSelectedCandId);
+                  if (!selCand || !req) return null;
+                  const previewMatch = buildCandidateMatchRecord(req, selCand);
+                  return (
+                    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3 space-y-2 text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[var(--text-primary)]">Deterministic Fitment Score</span>
+                        <span className="font-mono font-bold text-[14px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                          {previewMatch.final_score}/100
+                        </span>
+                      </div>
+                      <div className="text-[var(--text-secondary)]">
+                        <strong>Experience:</strong> {selCand.total_experience_years ?? 0} yrs (JD requires {req.min_experience}–{req.max_experience} yrs)
+                      </div>
+                      {previewMatch.matched_skills.length > 0 && (
+                        <div>
+                          <span className="text-emerald-700 font-medium">Matched skills ({previewMatch.matched_skills.length}): </span>
+                          <span className="text-[var(--text-primary)]">{previewMatch.matched_skills.slice(0, 6).join(', ')}{previewMatch.matched_skills.length > 6 ? '…' : ''}</span>
+                        </div>
+                      )}
+                      {previewMatch.unproven_skills.length > 0 && (
+                        <div>
+                          <span className="text-amber-700 font-medium">Unproven / Missed skills ({previewMatch.unproven_skills.length}): </span>
+                          <span className="text-[var(--text-secondary)]">{previewMatch.unproven_skills.slice(0, 6).join(', ')}{previewMatch.unproven_skills.length > 6 ? '…' : ''}</span>
+                        </div>
+                      )}
+                      {req.employment_type === 'full_time' && req.vendor_charge_pct != null && (
+                        <div className="pt-1 text-[11px] font-medium text-emerald-700 border-t border-[var(--border)]">
+                          💰 Placement fee: {req.vendor_charge_pct}% of CTC upon successful hire
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                <Textarea
+                  label="Notes (optional)"
+                  value={manualCandNotes}
+                  onChange={(e) => setManualCandNotes(e.target.value)}
+                  placeholder="Add any context for the recruiter…"
+                  rows={3}
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button size="sm" variant="outline" onClick={() => setManualCandOpen(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    disabled={!manualSelectedCandId || manualCandSubmitting}
+                    onClick={handleManualCandSubmit}
+                  >
+                    {manualCandSubmitting ? 'Submitting…' : 'Submit Candidate'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </Dialog>
     </div>
   );
@@ -1502,6 +1703,15 @@ export const VendorCandidateDetailPage: React.FC = () => {
   const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
   const [showNdaAlert, setShowNdaAlert] = useState(false);
 
+  // Manual requirement mapping state (submitting this candidate to an open requirement)
+  const [manualReqOpen, setManualReqOpen] = useState(false);
+  const [manualReqList, setManualReqList] = useState<Requirement[]>([]);
+  const [manualReqLoading, setManualReqLoading] = useState(false);
+  const [manualSelectedReqId, setManualSelectedReqId] = useState('');
+  const [manualReqNotes, setManualReqNotes] = useState('');
+  const [manualReqSubmitting, setManualReqSubmitting] = useState(false);
+  const [manualReqDupReason, setManualReqDupReason] = useState<string | null>(null);
+
   const { data: cand, isLoading } = useQuery({
     queryKey: ['vendor_candidate_detail', id],
     queryFn: () => fetchCandidateById(id!),
@@ -1678,6 +1888,46 @@ export const VendorCandidateDetailPage: React.FC = () => {
     }
   };
 
+  const openManualMap = async () => {
+    setManualReqOpen(true);
+    setManualReqLoading(true);
+    setManualSelectedReqId('');
+    setManualReqNotes('');
+    setManualReqDupReason(null);
+    try {
+      const res = await fetchRequirements({ status: 'open', forVendor: true, pageSize: 200 } as Parameters<typeof fetchRequirements>[0]);
+      setManualReqList(res.data);
+    } catch {
+      toast({ title: 'Could not load requirements', tone: 'error' });
+    } finally {
+      setManualReqLoading(false);
+    }
+  };
+
+  const handleManualSubmit = async () => {
+    if (!manualSelectedReqId || !id) return;
+    setManualReqSubmitting(true);
+    try {
+      const res = await submitCandidateRpc({
+        p_requirement_id: manualSelectedReqId,
+        p_candidate_id: id,
+        p_notes: manualReqNotes.trim() || null,
+      });
+      if (res.status === 'duplicate') {
+        setManualReqDupReason(res.reason ?? 'Already submitted to this requirement.');
+        return;
+      }
+      toast({ title: 'Candidate submitted successfully', tone: 'success' });
+      setManualReqOpen(false);
+      queryClient.invalidateQueries({ queryKey: ['vendor_candidate_submissions', id] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_candidate_matches', id] });
+    } catch (err) {
+      toast({ title: 'Submission failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setManualReqSubmitting(false);
+    }
+  };
+
   if (isLoading || !cand) return <TableSkeleton rows={4} cols={4} />;
 
   const mySubmissions = submissionsData?.data || [];
@@ -1707,6 +1957,9 @@ export const VendorCandidateDetailPage: React.FC = () => {
             </label>
             <Button size="sm" onClick={startEdit}>
               Edit candidate
+            </Button>
+            <Button size="sm" variant="outline" onClick={openManualMap}>
+              Submit to Requirement
             </Button>
           </div>
         }
@@ -2152,6 +2405,102 @@ export const VendorCandidateDetailPage: React.FC = () => {
           </div>
         </form>
       </Dialog>
+
+      {/* Manual Requirement Mapping Dialog */}
+      <Dialog
+        open={manualReqOpen}
+        onClose={() => setManualReqOpen(false)}
+        title="Submit candidate to an open requirement"
+        description={`Select any active requirement to map and submit ${cand.full_name} directly.`}
+        maxWidth="max-w-[560px]"
+      >
+        {manualReqDupReason ? (
+          <div className="space-y-4">
+            <div className="rounded-[8px] border border-amber-200 bg-amber-50 p-3 text-[13px] text-amber-800">
+              ⚠️ Already submitted: {manualReqDupReason}
+            </div>
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => { setManualReqDupReason(null); setManualSelectedReqId(''); }}>
+                Try another requirement
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setManualReqOpen(false)}>Close</Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {manualReqLoading ? (
+              <div className="text-[13px] text-[var(--text-secondary)] py-4 text-center">Loading open requirements…</div>
+            ) : (
+              <>
+                <Select
+                  label="Select open requirement"
+                  value={manualSelectedReqId}
+                  onChange={(e) => setManualSelectedReqId(e.target.value)}
+                  options={[
+                    { value: '', label: '— Choose an open requirement —' },
+                    ...manualReqList.map((r) => ({
+                      value: r.id,
+                      label: `${r.title} · ${r.employment_type === 'full_time' ? 'FTE' : r.employment_type.replace(/_/g, ' ')} · ${r.min_experience}–${r.max_experience ?? r.min_experience} yrs`,
+                    })),
+                  ]}
+                />
+                {(() => {
+                  const selReq = manualReqList.find((r) => r.id === manualSelectedReqId);
+                  if (!selReq || !cand) return null;
+                  const previewMatch = buildCandidateMatchRecord(selReq, cand);
+                  return (
+                    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3 space-y-2 text-[12px]">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-[var(--text-primary)]">Deterministic Fitment Score</span>
+                        <span className="font-mono font-bold text-[14px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                          {previewMatch.final_score}/100
+                        </span>
+                      </div>
+                      <div className="text-[var(--text-secondary)]">
+                        <strong>Experience:</strong> {cand.total_experience_years ?? 0} yrs (JD requires {selReq.min_experience}–{selReq.max_experience} yrs)
+                      </div>
+                      {previewMatch.matched_skills.length > 0 && (
+                        <div>
+                          <span className="text-emerald-700 font-medium">Matched skills ({previewMatch.matched_skills.length}): </span>
+                          <span className="text-[var(--text-primary)]">{previewMatch.matched_skills.slice(0, 6).join(', ')}{previewMatch.matched_skills.length > 6 ? '…' : ''}</span>
+                        </div>
+                      )}
+                      {previewMatch.unproven_skills.length > 0 && (
+                        <div>
+                          <span className="text-amber-700 font-medium">Unproven / Missed skills ({previewMatch.unproven_skills.length}): </span>
+                          <span className="text-[var(--text-secondary)]">{previewMatch.unproven_skills.slice(0, 6).join(', ')}{previewMatch.unproven_skills.length > 6 ? '…' : ''}</span>
+                        </div>
+                      )}
+                      {selReq.employment_type === 'full_time' && selReq.vendor_charge_pct != null && (
+                        <div className="pt-1 text-[11px] font-medium text-emerald-700 border-t border-[var(--border)]">
+                          💰 Placement fee: {selReq.vendor_charge_pct}% of CTC upon successful hire
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+                <Textarea
+                  label="Notes (optional)"
+                  value={manualReqNotes}
+                  onChange={(e) => setManualReqNotes(e.target.value)}
+                  placeholder="Add any context for the recruiter…"
+                  rows={3}
+                />
+                <div className="flex justify-end gap-2 pt-1">
+                  <Button size="sm" variant="outline" onClick={() => setManualReqOpen(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    disabled={!manualSelectedReqId || manualReqSubmitting}
+                    onClick={handleManualSubmit}
+                  >
+                    {manualReqSubmitting ? 'Submitting…' : 'Submit Candidate'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </Dialog>
     </div>
   );
 };
@@ -2549,167 +2898,660 @@ export const VendorRatingsPage: React.FC = () => {
   );
 };
 
-// 8. Vendor Match Intelligence Page (/vendor/matches)
+// 8. Vendor Match Requirements Page (/vendor/matches)
 export const VendorMatchIntelligencePage: React.FC = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
-  const [selectedReqId, setSelectedReqId] = useState<string>('');
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
+  const [matchMode, setMatchMode] = useState<'by_candidate' | 'by_requirement'>('by_candidate');
+  const [selectedCandidateId, setSelectedCandidateId] = useState<string>('');
+  const [selectedReqId, setSelectedReqId] = useState<string>('');
+  const [candReqSearch, setCandReqSearch] = useState<string>('');
+
+  const [evidenceTarget, setEvidenceTarget] = useState<CandidateMatch | null>(null);
+  const [scorecardTarget, setScorecardTarget] = useState<CandidateMatch | null>(null);
+  const [submitMatchTarget, setSubmitMatchTarget] = useState<{ match: CandidateMatch; notes: string } | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [dupReason, setDupReason] = useState<string | null>(null);
+
+  // Manual candidate modal for "by_requirement" mode
+  const [manualCandModalOpen, setManualCandModalOpen] = useState(false);
+  const [manualModalCandId, setManualModalCandId] = useState('');
+  const [manualModalNotes, setManualModalNotes] = useState('');
+
+  // 1. Fetch all vendor-visible open requirements
   const { data: reqsData, isLoading: loadingReqs } = useQuery({
     queryKey: ['vendor_requirements_for_matches'],
-    queryFn: () => fetchRequirements({ page: 1, pageSize: 100, forVendor: true }),
+    queryFn: () => fetchRequirements({ page: 1, pageSize: 200, status: 'open', forVendor: true }),
   });
-
   const requirements = reqsData?.data || [];
+
+  // 2. Fetch all candidates owned by this vendor
+  const { data: candsData, isLoading: loadingCands } = useQuery({
+    queryKey: ['vendor_candidates_for_matches', profile?.org_id],
+    queryFn: () => fetchCandidates({ ownerVendorOrgId: profile?.org_id, pageSize: 200 }),
+    enabled: Boolean(profile?.org_id),
+  });
+  const candidates = candsData?.data || [];
+
+  // Active selections
+  const activeCandId = selectedCandidateId || candidates[0]?.id || '';
+  const activeCandidate = candidates.find((c) => c.id === activeCandId) || null;
+
   const activeReqId = selectedReqId || requirements[0]?.id || '';
   const activeReq = requirements.find((r) => r.id === activeReqId) || null;
 
-  const { data: matchesData, isLoading: loadingMatches } = useQuery({
+  // 3. Fetch submissions for current vendor to track "Already Submitted"
+  const { data: allSubmissionsData } = useQuery({
+    queryKey: ['vendor_all_submissions_for_matches', profile?.org_id],
+    queryFn: () => fetchSubmissions({ vendorOrgId: profile?.org_id || undefined, pageSize: 500 }),
+    enabled: Boolean(profile?.org_id),
+  });
+  const allSubmissions = allSubmissionsData?.data || [];
+  const submittedPairSet = useMemo(() => {
+    const s = new Set<string>();
+    for (const sub of allSubmissions) {
+      s.add(`${sub.requirement_id}_${sub.candidate_id}`);
+    }
+    return s;
+  }, [allSubmissions]);
+
+  // Matches for By-Requirement mode (AI ranked)
+  const { data: reqMatchesData, isLoading: loadingReqMatches } = useQuery({
     queryKey: ['vendor_match_intelligence', activeReqId],
     queryFn: () => fetchMatchesForRequirement({ requirementId: activeReqId, page: 1 }),
-    enabled: Boolean(activeReqId),
+    enabled: Boolean(activeReqId && matchMode === 'by_requirement'),
   });
 
-  const { data: submissionsData } = useQuery({
-    queryKey: ['vendor_match_subs', activeReqId, profile?.org_id],
-    queryFn: () =>
-      fetchSubmissions({
-        requirementId: activeReqId,
-        vendorOrgId: profile?.org_id || undefined,
-        page: 1,
-      }),
-    enabled: Boolean(activeReqId && profile?.org_id),
-  });
+  // Matches for By-Candidate mode: deterministic real-time matching against all open requirements
+  const candidateRequirementMatches = useMemo(() => {
+    if (!activeCandidate) return [];
+    return requirements
+      .filter((r) => {
+        if (!candReqSearch.trim()) return true;
+        const q = candReqSearch.toLowerCase();
+        return (
+          r.title.toLowerCase().includes(q) ||
+          (r.skills || []).some((sk) => sk.toLowerCase().includes(q)) ||
+          r.location.toLowerCase().includes(q)
+        );
+      })
+      .map((r) => buildCandidateMatchRecord(r, activeCandidate))
+      .sort((a, b) => b.final_score - a.final_score);
+  }, [requirements, activeCandidate, candReqSearch]);
 
-  const mySubmissions = submissionsData?.data || [];
+  const handleConfirmSubmit = async () => {
+    if (!submitMatchTarget) return;
+    setSubmitting(true);
+    try {
+      const res = await submitCandidateRpc({
+        p_requirement_id: submitMatchTarget.match.requirement_id,
+        p_candidate_id: submitMatchTarget.match.candidate_id,
+        p_notes: submitMatchTarget.notes.trim() || null,
+      });
+      if (res.status === 'duplicate') {
+        setDupReason(res.reason ?? 'Already submitted to this requirement.');
+        setSubmitMatchTarget(null);
+        return;
+      }
+      toast({ title: 'Candidate submitted successfully', tone: 'success' });
+      setSubmitMatchTarget(null);
+      queryClient.invalidateQueries({ queryKey: ['vendor_all_submissions_for_matches'] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_req_submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_candidate_submissions'] });
+    } catch (err) {
+      toast({ title: 'Submission failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleManualModalSubmit = async () => {
+    if (!manualModalCandId || !activeReqId) return;
+    setSubmitting(true);
+    try {
+      const res = await submitCandidateRpc({
+        p_requirement_id: activeReqId,
+        p_candidate_id: manualModalCandId,
+        p_notes: manualModalNotes.trim() || null,
+      });
+      if (res.status === 'duplicate') {
+        setDupReason(res.reason ?? 'Already submitted to this requirement.');
+        setManualCandModalOpen(false);
+        return;
+      }
+      toast({ title: 'Candidate submitted successfully', tone: 'success' });
+      setManualCandModalOpen(false);
+      setManualModalCandId('');
+      setManualModalNotes('');
+      queryClient.invalidateQueries({ queryKey: ['vendor_all_submissions_for_matches'] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_match_intelligence', activeReqId] });
+    } catch (err) {
+      toast({ title: 'Submission failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Match intelligence"
-        description="Deterministic 6-pillar candidate matching across your agency pool and active open requirements."
+        title="Match requirements"
+        description="Select any candidate to map directly to open jobs with deterministic fitment scoring and instant submission."
       />
 
-      {loadingReqs ? (
-        <TableSkeleton rows={4} cols={4} />
-      ) : !requirements.length ? (
-        <EmptyState
-          title="No active requirements available for matching"
-          description="Once HQ publishes and shares requirements with your agency, ranked candidate matches will appear here."
-        />
-      ) : (
+      {/* Mode Selector Tabs */}
+      <div className="flex border-b border-[var(--border)]">
+        <button
+          type="button"
+          onClick={() => setMatchMode('by_candidate')}
+          className={`pb-2.5 px-4 text-[13px] font-medium border-b-2 transition-colors cursor-pointer ${
+            matchMode === 'by_candidate'
+              ? 'border-[var(--brand-primary)] text-[var(--text-primary)]'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          Select candidate → Match to open jobs ({candidates.length})
+        </button>
+        <button
+          type="button"
+          onClick={() => setMatchMode('by_requirement')}
+          className={`pb-2.5 px-4 text-[13px] font-medium border-b-2 transition-colors cursor-pointer ${
+            matchMode === 'by_requirement'
+              ? 'border-[var(--brand-primary)] text-[var(--text-primary)]'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          Select requirement → View matches ({requirements.length})
+        </button>
+      </div>
+
+      {/* ── MODE 1: BY CANDIDATE ────────────────────────────────────────────── */}
+      {matchMode === 'by_candidate' && (
         <div className="space-y-5">
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4">
-            <div className="w-full sm:w-96">
-              <Select
-                label="Target requirement"
-                value={activeReqId}
-                onChange={(e) => setSelectedReqId(e.target.value)}
-                options={requirements.map((r) => {
-                  const b = formatRequirementBudgetWithSubtitle(r);
-                  return {
-                    value: r.id,
-                    label: `${r.title} (${r.location} · ${b.formatted})`,
-                  };
-                })}
-              />
-            </div>
-
-            {activeReq && (
-              <div className="flex items-center gap-3">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => navigate(`/vendor/requirements/${activeReq.id}`)}
-                >
-                  Open requirement &amp; submit →
-                </Button>
-              </div>
-            )}
-          </div>
-
-          {loadingMatches ? (
-            <TableSkeleton rows={5} cols={4} />
-          ) : !matchesData?.data?.length ? (
+          {loadingCands ? (
+            <TableSkeleton rows={3} cols={4} />
+          ) : !candidates.length ? (
             <EmptyState
-              title="No matching candidates in your pool for this requirement"
-              description="Add candidates with overlapping skills in your Candidate Pool to compute ranked matches."
-              actionLabel="Go to Candidates"
+              title="No candidates in your agency pool yet"
+              description="Add candidates to your pool first, then match them to open jobs here."
+              actionLabel="Add candidate"
               onAction={() => navigate('/vendor/candidates')}
             />
           ) : (
-            <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] divide-y divide-[var(--border)]">
-              {matchesData.data.map((m, idx) => {
-                const alreadySubmitted = mySubmissions.some(
-                  (s) => s.candidate_id === m.candidate_id
-                );
-                return (
-                  <div
-                    key={m.id}
-                    className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
-                  >
-                    <div className="space-y-1.5 min-w-0">
-                      <div className="flex items-center gap-2.5">
-                        <span className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
-                          #{idx + 1}
-                        </span>
-                        <Link
-                          to={`/vendor/candidates/${m.candidate_id}`}
-                          className="text-[14px] font-semibold text-[var(--text-primary)] hover:underline truncate"
-                        >
-                          {m.candidates?.full_name || m.candidate_id}
-                        </Link>
-                        <span className="text-[12px] text-[var(--text-secondary)]">
-                          {m.candidates?.current_title || '-'} ·{' '}
-                          <span className="font-mono tabular-nums">
-                            {m.candidates?.total_experience_years ?? '-'} yrs
-                          </span>
-                        </span>
-                      </div>
+            <>
+              {/* Candidate Selection Bar */}
+              <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="w-full sm:w-96">
+                    <Select
+                      label="Select candidate to map"
+                      value={activeCandId}
+                      onChange={(e) => setSelectedCandidateId(e.target.value)}
+                      options={candidates.map((c) => ({
+                        value: c.id,
+                        label: `${c.full_name}${c.current_title ? ` · ${c.current_title}` : ''} (${c.total_experience_years ?? 0} yrs · ${c.location || '-'})`,
+                      }))}
+                    />
+                  </div>
 
-                      <div className="flex flex-wrap gap-1.5">
-                        {(m.matched_skills || []).map((sk) => (
-                          <span
-                            key={`m-${sk}`}
-                            className="inline-flex items-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-primary)]"
-                          >
-                            {sk}
-                          </span>
-                        ))}
-                        {(m.unproven_skills || []).map((sk) => (
-                          <span
-                            key={`u-${sk}`}
-                            className="inline-flex items-center rounded-[6px] border border-dashed border-[var(--border-strong)] px-2 py-0.5 text-[12px] text-[var(--text-tertiary)]"
-                          >
-                            {sk}
-                          </span>
-                        ))}
-                      </div>
+                  <div className="w-full sm:w-72">
+                    <Input
+                      label="Filter open jobs"
+                      placeholder="Search title, skill, location…"
+                      value={candReqSearch}
+                      onChange={(e) => setCandReqSearch(e.target.value)}
+                    />
+                  </div>
+                </div>
+
+                {activeCandidate && (
+                  <div className="pt-2 border-t border-[var(--border)] flex flex-wrap items-center justify-between gap-2 text-[12px]">
+                    <div className="text-[var(--text-secondary)]">
+                      <strong className="text-[var(--text-primary)]">{activeCandidate.full_name}</strong>
+                      {activeCandidate.current_title && ` · ${activeCandidate.current_title}`}
+                      {` · ${activeCandidate.total_experience_years ?? 0} yrs exp`}
+                      {activeCandidate.location && ` · ${activeCandidate.location}`}
                     </div>
-
-                    <div className="flex items-center gap-4 shrink-0">
-                      <ScoreBar
-                        score={m.final_score}
-                        isOverridden={m.override_score !== null}
-                      />
-                      {alreadySubmitted ? (
-                        <Badge tone="success">Submitted</Badge>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={() => navigate(`/vendor/requirements/${activeReqId}`)}
-                        >
-                          Review &amp; submit
-                        </Button>
-                      )}
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => navigate(`/vendor/candidates/${activeCandidate.id}`)}
+                      >
+                        View candidate profile →
+                      </Button>
                     </div>
                   </div>
-                );
-              })}
+                )}
+              </div>
+
+              {/* Requirements Match List */}
+              {loadingReqs ? (
+                <TableSkeleton rows={5} cols={4} />
+              ) : !candidateRequirementMatches.length ? (
+                <EmptyState
+                  title="No matching open jobs found"
+                  description="Try clearing your search query or check back when new requirements are shared."
+                />
+              ) : (
+                <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] divide-y divide-[var(--border)]">
+                  {candidateRequirementMatches.map((m, idx) => {
+                    const reqItem = m.requirements;
+                    const isSubmitted = submittedPairSet.has(`${m.requirement_id}_${m.candidate_id}`);
+                    const budgetInfo = reqItem ? formatRequirementBudgetWithSubtitle(reqItem) : { formatted: '-' };
+
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1.5 min-w-0 flex-1">
+                          <div className="flex flex-wrap items-center gap-2.5">
+                            <span className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)] w-6">
+                              #{idx + 1}
+                            </span>
+                            <Link
+                              to={`/vendor/requirements/${m.requirement_id}`}
+                              className="text-[14px] font-semibold text-[var(--text-primary)] hover:underline truncate"
+                            >
+                              {reqItem?.title || m.requirement_id}
+                            </Link>
+                            <span className="text-[12px] text-[var(--text-secondary)]">
+                              {reqItem?.location || '-'} ({reqItem?.work_mode || '-'}) · {formatExperienceRange(reqItem?.min_experience ?? 0, reqItem?.max_experience ?? 0)}
+                            </span>
+                            {reqItem?.employment_type === 'full_time' && reqItem.vendor_charge_pct != null && (
+                              <span className="inline-flex items-center rounded px-2 py-0.5 text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                💰 {reqItem.vendor_charge_pct}% CTC Placement fee
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3 text-[12px] text-[var(--text-secondary)]">
+                            <span>Vendor budget: <strong className="text-[var(--text-primary)]">{budgetInfo.formatted}</strong></span>
+                            <span>•</span>
+                            <span>{m.experience_note || `${activeCandidate?.total_experience_years ?? 0} yrs experience`}</span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5 pt-1">
+                            {(m.matched_skills || []).map((sk) => (
+                              <span
+                                key={`m-${sk}`}
+                                className="inline-flex items-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[11px] font-medium text-[var(--text-primary)]"
+                              >
+                                ✓ {sk}
+                              </span>
+                            ))}
+                            {(m.unproven_skills || []).map((sk) => (
+                              <span
+                                key={`u-${sk}`}
+                                title="Not verified from candidate profile; recruiter screening will verify"
+                                className="inline-flex items-center rounded-[6px] border border-dashed border-[var(--border-strong)] px-2 py-0.5 text-[11px] text-[var(--text-tertiary)]"
+                              >
+                                ? {sk}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-3 shrink-0">
+                          <ScoreBar score={m.final_score} />
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setScorecardTarget(m)}
+                          >
+                            Scorecard
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEvidenceTarget(m)}
+                          >
+                            Evidence
+                          </Button>
+
+                          {isSubmitted ? (
+                            <Badge tone="success">Submitted</Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() => setSubmitMatchTarget({ match: m, notes: '' })}
+                            >
+                              Submit candidate
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── MODE 2: BY REQUIREMENT ─────────────────────────────────────────── */}
+      {matchMode === 'by_requirement' && (
+        <div className="space-y-5">
+          {loadingReqs ? (
+            <TableSkeleton rows={4} cols={4} />
+          ) : !requirements.length ? (
+            <EmptyState
+              title="No active requirements available for matching"
+              description="Once HQ publishes and shares requirements with your agency, ranked candidate matches will appear here."
+            />
+          ) : (
+            <div className="space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4">
+                <div className="w-full sm:w-96">
+                  <Select
+                    label="Target requirement"
+                    value={activeReqId}
+                    onChange={(e) => setSelectedReqId(e.target.value)}
+                    options={requirements.map((r) => {
+                      const b = formatRequirementBudgetWithSubtitle(r);
+                      const feeInfo = r.employment_type === 'full_time' && r.vendor_charge_pct != null ? ` · ${r.vendor_charge_pct}% CTC fee` : '';
+                      return {
+                        value: r.id,
+                        label: `${r.title} (${r.location} · ${b.formatted}${feeInfo})`,
+                      };
+                    })}
+                  />
+                </div>
+
+                {activeReq && (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setManualCandModalOpen(true)}
+                    >
+                      + Map candidate manually
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => navigate(`/vendor/requirements/${activeReq.id}`)}
+                    >
+                      Open requirement →
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              {loadingReqMatches ? (
+                <TableSkeleton rows={5} cols={4} />
+              ) : !reqMatchesData?.data?.length ? (
+                <EmptyState
+                  title="No auto-matching candidates for this requirement"
+                  description="Use the '+ Map candidate manually' button above to submit any candidate directly from your pool."
+                  actionLabel="+ Map candidate manually"
+                  onAction={() => setManualCandModalOpen(true)}
+                />
+              ) : (
+                <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] divide-y divide-[var(--border)]">
+                  {reqMatchesData.data.map((m, idx) => {
+                    const isSubmitted = submittedPairSet.has(`${m.requirement_id}_${m.candidate_id}`);
+                    return (
+                      <div
+                        key={m.id}
+                        className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4"
+                      >
+                        <div className="space-y-1.5 min-w-0">
+                          <div className="flex items-center gap-2.5">
+                            <span className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
+                              #{idx + 1}
+                            </span>
+                            <Link
+                              to={`/vendor/candidates/${m.candidate_id}`}
+                              className="text-[14px] font-semibold text-[var(--text-primary)] hover:underline truncate"
+                            >
+                              {m.candidates?.full_name || m.candidate_id}
+                            </Link>
+                            <span className="text-[12px] text-[var(--text-secondary)]">
+                              {m.candidates?.current_title || '-'} ·{' '}
+                              <span className="font-mono tabular-nums">
+                                {m.candidates?.total_experience_years ?? '-'} yrs
+                              </span>
+                            </span>
+                          </div>
+
+                          <div className="flex flex-wrap gap-1.5">
+                            {(m.matched_skills || []).map((sk) => (
+                              <span
+                                key={`m-${sk}`}
+                                className="inline-flex items-center rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] px-2 py-0.5 text-[12px] font-medium text-[var(--text-primary)]"
+                              >
+                                {sk}
+                              </span>
+                            ))}
+                            {(m.unproven_skills || []).map((sk) => (
+                              <span
+                                key={`u-${sk}`}
+                                className="inline-flex items-center rounded-[6px] border border-dashed border-[var(--border-strong)] px-2 py-0.5 text-[12px] text-[var(--text-tertiary)]"
+                              >
+                                {sk}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-3 shrink-0">
+                          <ScoreBar
+                            score={m.final_score}
+                            isOverridden={m.override_score !== null}
+                          />
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setScorecardTarget(m)}
+                          >
+                            Scorecard
+                          </Button>
+
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => setEvidenceTarget(m)}
+                          >
+                            Evidence
+                          </Button>
+
+                          {isSubmitted ? (
+                            <Badge tone="success">Submitted</Badge>
+                          ) : (
+                            <Button
+                              size="sm"
+                              onClick={() => setSubmitMatchTarget({ match: m, notes: '' })}
+                            >
+                              Submit
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
+
+      {/* ── MODAL: Match Evidence ── */}
+      <Dialog
+        open={Boolean(evidenceTarget)}
+        onClose={() => setEvidenceTarget(null)}
+        title="Match evidence"
+        description="Deterministic 4-pillar score breakdown: Skills (40%), Experience (25%), Domain (20%), Seniority (15%)."
+        maxWidth="max-w-[700px]"
+      >
+        {evidenceTarget && <MatchEvidencePanel match={evidenceTarget} />}
+      </Dialog>
+
+      {/* ── MODAL: Fitment ScoreCard (View Only for Vendor) ── */}
+      {scorecardTarget && scorecardTarget.candidates && scorecardTarget.requirements && (
+        <FitmentScoreCard
+          open={Boolean(scorecardTarget)}
+          onClose={() => setScorecardTarget(null)}
+          match={scorecardTarget}
+          candidate={scorecardTarget.candidates}
+          requirement={scorecardTarget.requirements}
+          isVendorView={true}
+        />
+      )}
+
+      {/* ── MODAL: Submit Candidate with Notes ── */}
+      <Dialog
+        open={Boolean(submitMatchTarget)}
+        onClose={() => setSubmitMatchTarget(null)}
+        title="Submit candidate to requirement"
+        description="Review candidate fitment before submitting."
+        maxWidth="max-w-[560px]"
+      >
+        {submitMatchTarget && (
+          <div className="space-y-4">
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3 text-[12px] space-y-1">
+              <div>
+                <strong>Candidate:</strong> {submitMatchTarget.match.candidates?.full_name || submitMatchTarget.match.candidate_id}
+              </div>
+              <div>
+                <strong>Requirement:</strong> {submitMatchTarget.match.requirements?.title || submitMatchTarget.match.requirement_id}
+              </div>
+              <div>
+                <strong>Fitment Score:</strong> {submitMatchTarget.match.final_score}/100
+              </div>
+              {submitMatchTarget.match.requirements?.employment_type === 'full_time' &&
+                submitMatchTarget.match.requirements?.vendor_charge_pct != null && (
+                  <div className="text-emerald-700 font-medium">
+                    💰 Placement fee: {submitMatchTarget.match.requirements.vendor_charge_pct}% of CTC
+                  </div>
+                )}
+            </div>
+
+            <Textarea
+              label="Submission notes (optional)"
+              placeholder="Add key highlights or recruiter notes..."
+              rows={3}
+              value={submitMatchTarget.notes}
+              onChange={(e) =>
+                setSubmitMatchTarget((prev) => (prev ? { ...prev, notes: e.target.value } : null))
+              }
+            />
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setSubmitMatchTarget(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                loading={submitting}
+                onClick={handleConfirmSubmit}
+              >
+                Confirm submission
+              </Button>
+            </div>
+          </div>
+        )}
+      </Dialog>
+
+      {/* ── MODAL: Map Candidate Manually in By-Requirement mode ── */}
+      <Dialog
+        open={manualCandModalOpen}
+        onClose={() => setManualCandModalOpen(false)}
+        title="Map candidate to this requirement"
+        description="Select any candidate from your agency pool to compute fitment and submit."
+        maxWidth="max-w-[560px]"
+      >
+        <div className="space-y-4">
+          <Select
+            label="Select candidate"
+            value={manualModalCandId}
+            onChange={(e) => setManualModalCandId(e.target.value)}
+            options={[
+              { value: '', label: '— Choose a candidate —' },
+              ...candidates.map((c) => ({
+                value: c.id,
+                label: `${c.full_name}${c.current_title ? ` · ${c.current_title}` : ''} (${c.total_experience_years ?? 0} yrs)`,
+              })),
+            ]}
+          />
+
+          {(() => {
+            const selCand = candidates.find((c) => c.id === manualModalCandId);
+            if (!selCand || !activeReq) return null;
+            const previewMatch = buildCandidateMatchRecord(activeReq, selCand);
+            return (
+              <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3 space-y-2 text-[12px]">
+                <div className="flex items-center justify-between">
+                  <span className="font-semibold text-[var(--text-primary)]">Fitment score</span>
+                  <span className="font-mono font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded">
+                    {previewMatch.final_score}/100
+                  </span>
+                </div>
+                <div className="text-[var(--text-secondary)]">
+                  {selCand.total_experience_years ?? 0} yrs experience vs {formatExperienceRange(activeReq.min_experience, activeReq.max_experience)} required
+                </div>
+                {previewMatch.matched_skills.length > 0 && (
+                  <div>
+                    <span className="text-emerald-700 font-medium">Matched skills: </span>
+                    <span>{previewMatch.matched_skills.join(', ')}</span>
+                  </div>
+                )}
+                {activeReq.employment_type === 'full_time' && activeReq.vendor_charge_pct != null && (
+                  <div className="text-emerald-700 font-medium pt-1 border-t border-[var(--border)]">
+                    💰 Placement fee: {activeReq.vendor_charge_pct}% of CTC
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          <Textarea
+            label="Notes (optional)"
+            placeholder="Add any context for the recruiter..."
+            rows={3}
+            value={manualModalNotes}
+            onChange={(e) => setManualModalNotes(e.target.value)}
+          />
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setManualCandModalOpen(false)}
+            >
+              Cancel
+            </Button>
+            <Button
+              size="sm"
+              disabled={!manualModalCandId || submitting}
+              loading={submitting}
+              onClick={handleManualModalSubmit}
+            >
+              Submit candidate
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+
+      {/* Duplicate Alert Dialog */}
+      <DuplicateDialog
+        open={Boolean(dupReason)}
+        onClose={() => setDupReason(null)}
+        reason={dupReason}
+      />
     </div>
   );
 };

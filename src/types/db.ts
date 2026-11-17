@@ -134,6 +134,7 @@ export interface Requirement {
   status: RequirementStatus;
   is_public: boolean;
   submission_sla_hours: number;
+  vendor_charge_pct: number | null;
   created_by: string;
   opened_at: string | null;
   closed_at: string | null;

@@ -2416,6 +2416,12 @@ export const HqRequirementDetailPage: React.FC = () => {
                 {req.submission_sla_hours}h
               </span>
             </div>
+            {req.employment_type === 'full_time' && req.vendor_charge_pct != null && (
+              <div className="py-2 flex justify-between gap-2">
+                <span className="text-[var(--text-secondary)]">Vendor placement fee</span>
+                <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</span>
+              </div>
+            )}
             <div className="py-2 flex justify-between gap-2">
               <span className="text-[var(--text-secondary)]">Job board</span>
               <span className="text-[var(--text-primary)]">

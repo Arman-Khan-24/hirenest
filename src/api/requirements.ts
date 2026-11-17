@@ -628,6 +628,7 @@ export interface CreateRequirementInput {
   vendor_visible_budget: number | null;
   currency: string;
   submission_sla_hours: number;
+  vendor_charge_pct?: number | null;
   sourceRef?: string;
 }
 
@@ -805,6 +806,7 @@ export async function createRequirement(
         vendor_visible_budget: input.vendor_visible_budget,
         currency: safeDbCurrency,
         submission_sla_hours: input.submission_sla_hours,
+        vendor_charge_pct: input.employment_type === 'full_time' ? (input.vendor_charge_pct ?? null) : null,
       })
       .select('*, organizations:client_org_id(id, name)')
       .single();
@@ -1130,6 +1132,7 @@ export async function updateRequirement(
       vendor_visible_budget: input.vendor_visible_budget,
       currency: input.currency,
       submission_sla_hours: input.submission_sla_hours,
+      vendor_charge_pct: input.vendor_charge_pct ?? null,
     })
     .eq('id', id)
     .select('*')
@@ -1151,6 +1154,7 @@ export async function updateRequirement(
         vendor_visible_budget: input.vendor_visible_budget,
         currency: inputMeta.baseCurrency || 'INR',
         submission_sla_hours: input.submission_sla_hours,
+        vendor_charge_pct: input.vendor_charge_pct ?? null,
       })
       .eq('id', id)
       .select('*')
