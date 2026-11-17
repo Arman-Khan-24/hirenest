@@ -1440,7 +1440,7 @@ export const HqRequirementDetailPage: React.FC = () => {
   };
 
   const submissions = submissionsData?.data || [];
-  const reqMeta = useMemo(() => parseRequirementMeta(req), [req]);
+  const reqMeta = parseRequirementMeta(req);
 
   const statusOptions = ['open', 'on_hold', 'closed', 'filled', 'draft'] as const;
 

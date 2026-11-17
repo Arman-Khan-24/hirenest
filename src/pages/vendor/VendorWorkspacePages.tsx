@@ -1079,7 +1079,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
 
   const mySubmissions = submissionsData?.data || [];
   const budgetInfo = formatRequirementBudgetWithSubtitle(req);
-  const reqMeta = useMemo(() => parseRequirementMeta(req), [req]);
+  const reqMeta = parseRequirementMeta(req);
 
   return (
     <div className="max-w-[1200px]">
