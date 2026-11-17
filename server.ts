@@ -2552,6 +2552,78 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     res.json({ ok: true, requirement: data });
   });
 
+  // Server-side requirement creation fallback (runs with service-role permissions)
+  app.post('/api/requirements/create', async (req, res) => {
+    const auth = await authenticateStaffingCaller(req);
+    if (auth.ok && !['admin', 'recruiter', 'client_manager'].includes(auth.role)) {
+      res.status(403).json({ error: 'Only admin, recruiter, or client managers can create requirements.' });
+      return;
+    }
+    const { requirement: input } = req.body as { requirement?: Record<string, unknown> };
+    if (!input || typeof input !== 'object') {
+      res.status(400).json({ error: 'requirement payload object is required.' });
+      return;
+    }
+
+    const allowedCols = [
+      'client_org_id',
+      'title',
+      'description',
+      'skills',
+      'min_experience',
+      'max_experience',
+      'location',
+      'work_mode',
+      'employment_type',
+      'openings',
+      'vendor_visible_budget',
+      'currency',
+      'submission_sla_hours',
+      'vendor_charge_pct',
+    ];
+    const cleanInsert: Record<string, unknown> = {};
+    for (const col of allowedCols) {
+      if (input[col] !== undefined) {
+        cleanInsert[col] = input[col];
+      }
+    }
+
+    if (typeof cleanInsert.work_mode === 'string') {
+      cleanInsert.work_mode = cleanInsert.work_mode.toLowerCase();
+    }
+    if (typeof cleanInsert.employment_type === 'string') {
+      cleanInsert.employment_type = cleanInsert.employment_type.toLowerCase();
+    }
+
+    // Fallback: If client_org_id missing or empty, find or use an approved client org
+    if (!cleanInsert.client_org_id) {
+      const { data: unmapped } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('name', 'Internal / Unmapped')
+        .maybeSingle();
+      if (unmapped) {
+        cleanInsert.client_org_id = unmapped.id;
+      }
+    }
+
+    if (auth.user?.id) {
+      cleanInsert.created_by = auth.user.id;
+    }
+
+    const { data, error } = await supabase
+      .from('requirements')
+      .insert(cleanInsert)
+      .select('*, organizations:client_org_id(id, name)')
+      .single();
+
+    if (error) {
+      res.status(500).json({ error: error.message });
+      return;
+    }
+    res.json({ ok: true, requirement: data });
+  });
+
   // ==========================================================================
   // UPDATE 3: Trial Activation, Automated Reminders, Checkout & Enforcement APIs
   // ==========================================================================

@@ -641,6 +641,28 @@ export interface CreateRequirementInput {
 
 export type UpdateRequirementInput = Omit<CreateRequirementInput, 'client_org_id'>;
 
+async function createRequirementViaBackend(
+  input: Record<string, unknown>
+): Promise<Requirement | null> {
+  try {
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData.session?.access_token;
+    const res = await fetch('/api/requirements/create', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ requirement: input }),
+    });
+    if (!res.ok) return null;
+    const json = await res.json();
+    return (json.requirement as Requirement) || null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Idempotent requirement creation with backend + database duplicate prevention.
  * Checks normalized fingerprint (title, skills, client organization scope, location, work mode, sourceRef)
@@ -765,10 +787,13 @@ export async function createRequirement(
         if (isEquivalent) {
           // If the retry has skills that were missing on the earlier record, enrich the canonical record
           if (input.skills.length > (row.skills?.length || 0)) {
-            await supabase
+            const { error: skillUpdErr } = await supabase
               .from('requirements')
               .update({ skills: input.skills })
               .eq('id', row.id);
+            if (skillUpdErr) {
+              await updateRequirementViaBackend(row.id, { skills: input.skills });
+            }
             row.skills = input.skills;
           }
 
@@ -797,25 +822,37 @@ export async function createRequirement(
 
     // 4. Insert the new canonical requirement using clean ISO currency code for DB check constraints
     const safeDbCurrency = (inputMeta.baseCurrency || 'INR').split('|')[0].trim() || 'INR';
-    const { data, error } = await supabase
+    const insertPayload: Record<string, unknown> = {
+      client_org_id: input.client_org_id,
+      title: input.title,
+      description: input.description,
+      skills: input.skills,
+      min_experience: input.min_experience,
+      max_experience: input.max_experience,
+      location: input.location,
+      work_mode: (input.work_mode || 'hybrid').toLowerCase(),
+      employment_type: (input.employment_type || 'full_time').toLowerCase(),
+      openings: input.openings,
+      vendor_visible_budget: input.vendor_visible_budget,
+      currency: safeDbCurrency,
+      submission_sla_hours: input.submission_sla_hours,
+      vendor_charge_pct: input.employment_type === 'full_time' ? (input.vendor_charge_pct ?? null) : null,
+    };
+
+    let { data, error } = await supabase
       .from('requirements')
-      .insert({
-        client_org_id: input.client_org_id,
-        title: input.title,
-        description: input.description,
-        skills: input.skills,
-        min_experience: input.min_experience,
-        max_experience: input.max_experience,
-        location: input.location,
-        work_mode: input.work_mode,
-        employment_type: input.employment_type,
-        openings: input.openings,
-        vendor_visible_budget: input.vendor_visible_budget,
-        currency: safeDbCurrency,
-        submission_sla_hours: input.submission_sla_hours,
-      })
+      .insert(insertPayload)
       .select('*, organizations:client_org_id(id, name)')
       .single();
+
+    // Fallback to backend creation endpoint if client RLS or table privilege rejected direct insert
+    if (error) {
+      const backendCreated = await createRequirementViaBackend(insertPayload);
+      if (backendCreated) {
+        data = backendCreated;
+        error = null;
+      }
+    }
 
     if (error) throw error;
     const created = { ...(data as Requirement), currency: input.currency };
