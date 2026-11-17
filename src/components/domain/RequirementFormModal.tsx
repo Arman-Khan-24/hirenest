@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { ShieldCheck } from 'lucide-react';
 import { classifyRequirement } from '../../lib/requirementCategory';
+import { hasBgvRequired } from './RequirementRibbon';
 import { parseExperienceInput } from '../../lib/format';
 import { z } from 'zod';
 import {
@@ -123,6 +125,10 @@ export const RequirementFormModal: React.FC<{
   const [profileType, setProfileType] = useState<'' | RequirementProfileType>(
     initialMeta.profileType || ''
   );
+  const [hasBgv, setHasBgv] = useState<boolean>(() => {
+    if (initialMeta.hasBgv !== undefined && initialMeta.hasBgv !== null) return initialMeta.hasBgv;
+    return hasBgvRequired(initialRequirement);
+  });
   const [workingDaysInput, setWorkingDaysInput] = useState<string>(
     initialMeta.workingDaysPerMonth !== null && initialMeta.workingDaysPerMonth !== undefined
       ? String(initialMeta.workingDaysPerMonth)
@@ -246,6 +252,11 @@ export const RequirementFormModal: React.FC<{
     setGoodToHave(parsed.goodToHaveSkills || []);
     setCategoryChoice(parsed.category ?? null);
     setProfileType(parsed.profileType || '');
+    setHasBgv(
+      parsed.hasBgv !== undefined && parsed.hasBgv !== null
+        ? parsed.hasBgv
+        : hasBgvRequired(initialRequirement)
+    );
     setWorkingDaysInput(parsed.workingDaysPerMonth != null ? String(parsed.workingDaysPerMonth) : '');
     setOpeningsInput(String(initialRequirement?.openings ?? 1));
     setSlaHoursInput(String(initialRequirement?.submission_sla_hours ?? defaultSlaHours));
@@ -508,6 +519,7 @@ export const RequirementFormModal: React.FC<{
         goodToHaveSkills: goodToHave,
         category: effectiveCategory,
         profileType: profileType || null,
+        hasBgv,
         hourlyRate: null,
         workingDaysPerMonth:
           budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
@@ -807,7 +819,7 @@ export const RequirementFormModal: React.FC<{
             onChange={setGoodToHave}
           />
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="space-y-1">
               <span className="block text-[12px] font-medium text-[var(--text-secondary)]">Requirement category</span>
               <div className="inline-flex rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] p-0.5">
@@ -827,7 +839,7 @@ export const RequirementFormModal: React.FC<{
                 ))}
               </div>
               {categoryChoice === null && (
-                <span className="block text-[11px] text-[var(--text-tertiary)]">Auto-detected from title and skills. Tap to set.</span>
+                <span className="block text-[11px] text-[var(--text-tertiary)]">Auto-detected. Tap to set.</span>
               )}
             </div>
             <Select
@@ -841,6 +853,29 @@ export const RequirementFormModal: React.FC<{
                 { value: 'both', label: 'Both (Bench & Market)' },
               ]}
             />
+            <div className="space-y-1">
+              <span className="block text-[12px] font-medium text-[var(--text-secondary)]">Verification process</span>
+              <button
+                type="button"
+                onClick={() => setHasBgv(!hasBgv)}
+                className={`w-full flex items-center justify-between h-[34px] px-2.5 rounded-[6px] border text-[12px] transition-colors cursor-pointer ${
+                  hasBgv
+                    ? 'border-sky-500 bg-sky-500/10 text-sky-800 dark:text-sky-300 font-medium'
+                    : 'border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:bg-[var(--bg-subtle)]'
+                }`}
+                title="Toggle background verification mandatory process (Employment Check & Police Clearance Certificate)"
+              >
+                <span className="flex items-center gap-1.5 truncate">
+                  <ShieldCheck className={`h-3.5 w-3.5 shrink-0 ${hasBgv ? 'text-sky-600' : 'text-[var(--text-tertiary)]'}`} />
+                  <span className="truncate">BGV process</span>
+                </span>
+                <span className={`text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.2 rounded-full shrink-0 ${
+                  hasBgv ? 'bg-sky-600 text-white' : 'bg-[var(--border)] text-[var(--text-tertiary)]'
+                }`}>
+                  {hasBgv ? 'Required' : 'Off'}
+                </span>
+              </button>
+            </div>
           </div>
 
           {aiSkillSuggestions.length > 0 && (

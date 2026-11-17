@@ -1,3 +1,4 @@
+import { ShieldCheck } from 'lucide-react';
 import { classifyRequirement, REQUIREMENT_CATEGORY_LABEL } from '../../lib/requirementCategory';
 
 type Props = {
@@ -11,6 +12,26 @@ type Props = {
   className?: string;
 };
 
+/**
+ * Checks whether a requirement has a mandatory Background Verification (BGV) process,
+ * derived from explicit currency metadata (|bgv=1|) or inferred from the JD text.
+ */
+export function hasBgvRequired(requirement?: {
+  currency?: string | null;
+  description?: string | null;
+  title?: string | null;
+} | null): boolean {
+  if (!requirement) return false;
+  const currencyStr = String(requirement.currency || '');
+  if (/\|bgv=(?:1|true)(?:\||$)/i.test(currencyStr)) return true;
+  if (/\|bgv=(?:0|false)(?:\||$)/i.test(currencyStr)) return false;
+
+  const text = `${requirement.title || ''} ${requirement.description || ''}`;
+  return /\b(?:bgv|background\s+verification|police\s+clearance|pcc\b|criminal\s+record|employment\s+check)\b/i.test(
+    text
+  );
+}
+
 function profilesOf(requirement: Props['requirement']): Array<'bench' | 'market'> {
   const m = /\|pt=(bench|market|both)(?:\||$)/.exec(String(requirement.currency || ''));
   if (!m) return [];
@@ -19,12 +40,14 @@ function profilesOf(requirement: Props['requirement']): Array<'bench' | 'market'
 
 /**
  * Ribbon tags shown above a requirement title: "IT" / "Non-IT", plus "Bench profile" /
- * "Market profile" when the requirement specifies one.
+ * "Market profile" when the requirement specifies one, and a floating "BGV" cloud badge
+ * when background verification is mandatory.
  */
 export function RequirementRibbon({ requirement, className = '' }: Props) {
   const category = classifyRequirement(requirement);
   const isIt = category === 'it';
   const profiles = profilesOf(requirement);
+  const hasBgv = hasBgvRequired(requirement);
   const base =
     'inline-flex items-center h-[18px] pl-2 pr-3 mb-1 whitespace-nowrap shrink-0 text-[10px] leading-[18px] font-semibold uppercase tracking-[0.08em] text-white';
   const shape = {
@@ -33,7 +56,7 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
     borderRadius: '3px 0 0 3px',
   } as const;
   return (
-    <span className={`inline-flex max-w-full flex-wrap items-center gap-1 ${className}`}>
+    <span className={`inline-flex max-w-full flex-wrap items-center gap-1.5 ${className}`}>
       <span
         title={isIt ? 'IT requirement' : 'Non-IT requirement'}
         className={base}
@@ -63,6 +86,19 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
           {profile === 'bench' ? 'Bench profile' : 'Market profile'}
         </span>
       ))}
+      {hasBgv && (
+        <span
+          title="Background Verification (BGV) process mandatory: Employment Check & Police Clearance Certificate (PCC)"
+          className="inline-flex items-center gap-1 h-[18px] px-2.5 mb-1 rounded-full whitespace-nowrap shrink-0 text-[10px] leading-[18px] font-bold uppercase tracking-[0.08em] text-white shadow-xs req-bgv-cloud"
+          style={{
+            background: 'linear-gradient(135deg, #0284C7, #0EA5E9 45%, #38BDF8)',
+            boxShadow: '0 2px 6px rgba(14, 165, 233, 0.45)',
+          }}
+        >
+          <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
+          <span>BGV</span>
+        </span>
+      )}
     </span>
   );
 }

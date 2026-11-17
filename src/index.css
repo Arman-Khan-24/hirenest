@@ -634,3 +634,22 @@
 @media (prefers-reduced-motion: reduce) {
   .req-ribbon-wave { animation: none; clip-path: polygon(0 0, 100% 0, calc(100% - 6px) 50%, 100% 100%, 0 100%); }
 }
+
+/* ── BGV Cloud Badge ───────────────────── */
+@keyframes bgv-cloud-float {
+  0%, 100% {
+    transform: translateY(0);
+    box-shadow: 0 2px 6px rgba(14, 165, 233, 0.45);
+  }
+  50% {
+    transform: translateY(-1.5px);
+    box-shadow: 0 4px 10px rgba(14, 165, 233, 0.6);
+  }
+}
+.req-bgv-cloud {
+  animation: bgv-cloud-float 2.8s ease-in-out infinite;
+  will-change: transform, box-shadow;
+}
+@media (prefers-reduced-motion: reduce) {
+  .req-bgv-cloud { animation: none; }
+}

@@ -6,3 +6,6 @@ comment on column public.requirements.vendor_charge_pct is 'Vendor placement fee
 
 -- Grant insert and update privileges to authenticated role on the new column
 grant insert (vendor_charge_pct), update (vendor_charge_pct) on public.requirements to authenticated;
+
+-- Grant insert and update privileges to authenticated role on the new column
+grant insert (vendor_charge_pct), update (vendor_charge_pct) on public.requirements to authenticated;

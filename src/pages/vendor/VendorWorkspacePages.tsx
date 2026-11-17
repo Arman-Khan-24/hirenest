@@ -6,6 +6,7 @@ import {
   RequirementRibbon,
   RequirementCategoryFilter,
   matchesRequirementCategory,
+  hasBgvRequired,
   type RequirementCategoryFilterValue,
 } from '../../components/domain/RequirementRibbon';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
@@ -1257,6 +1258,25 @@ export const VendorRequirementDetailPage: React.FC = () => {
 
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {hasBgvRequired(req) && (
+                <div className="rounded-[8px] border border-sky-500/30 bg-sky-500/5 p-4 flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0 text-sky-600 mt-0.5">
+                    <ShieldCheck className="h-5 w-5 stroke-[2.2]" />
+                  </div>
+                  <div className="space-y-1 text-[13px]">
+                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                      <span>Background Verification (BGV) Mandatory</span>
+                      <span className="rounded-full bg-sky-600 text-white text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold">
+                        BGV Process
+                      </span>
+                    </div>
+                    <p className="text-[var(--text-secondary)] text-[12px] leading-relaxed">
+                      This requirement requires a strict <strong>Background Verification (BGV)</strong> process prior to onboarding, including:
+                      <strong> Employment History Check</strong>, <strong>Police Clearance Certificate (PCC)</strong>, and verified in-house bench resource status.
+                    </p>
+                  </div>
+                </div>
+              )}
               <div>
                 <h3 className="text-[12px] font-medium text-[var(--text-secondary)] mb-2">
                   Description
@@ -1313,6 +1333,15 @@ export const VendorRequirementDetailPage: React.FC = () => {
               <div className="py-2 flex justify-between gap-2">
                 <dt className="text-[12px] text-[var(--text-secondary)]">Placement fee</dt>
                 <dd className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</dd>
+              </div>
+            )}
+            {hasBgvRequired(req) && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">BGV check</dt>
+                <dd className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
+                  <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
+                  Mandatory (PCC + Emp)
+                </dd>
               </div>
             )}
             <div className="py-2 flex justify-between gap-2">

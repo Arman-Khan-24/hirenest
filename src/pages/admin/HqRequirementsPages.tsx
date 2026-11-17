@@ -6,6 +6,7 @@ import {
   RequirementRibbon,
   RequirementCategoryFilter,
   matchesRequirementCategory,
+  hasBgvRequired,
   type RequirementCategoryFilterValue,
 } from '../../components/domain/RequirementRibbon';
 import React, { useMemo, useState } from 'react';
@@ -21,6 +22,7 @@ import {
   Plus,
   RefreshCw,
   Share2,
+  ShieldCheck,
   Trash2,
 } from 'lucide-react';
 import {
@@ -1536,6 +1538,26 @@ export const HqRequirementDetailPage: React.FC = () => {
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
+              {hasBgvRequired(req) && (
+                <div className="rounded-[8px] border border-sky-500/30 bg-sky-500/5 p-4 flex items-start gap-3">
+                  <div className="h-9 w-9 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0 text-sky-600 mt-0.5">
+                    <ShieldCheck className="h-5 w-5 stroke-[2.2]" />
+                  </div>
+                  <div className="space-y-1 text-[13px]">
+                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                      <span>Background Verification (BGV) Mandatory</span>
+                      <span className="rounded-full bg-sky-600 text-white text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold">
+                        BGV Process
+                      </span>
+                    </div>
+                    <p className="text-[var(--text-secondary)] text-[12px] leading-relaxed">
+                      This requirement requires a strict <strong>Background Verification (BGV)</strong> process prior to onboarding, including:
+                      <strong> Employment History Check</strong>, <strong>Police Clearance Certificate (PCC)</strong>, and verified in-house bench resource status.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-2">
                 <h3 className="text-[12px] leading-[16px] font-medium uppercase tracking-[0.04em] text-[var(--text-tertiary)]">
                   Description
@@ -2420,6 +2442,15 @@ export const HqRequirementDetailPage: React.FC = () => {
               <div className="py-2 flex justify-between gap-2">
                 <span className="text-[var(--text-secondary)]">Vendor placement fee</span>
                 <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">{req.vendor_charge_pct}% of CTC</span>
+              </div>
+            )}
+            {hasBgvRequired(req) && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <span className="text-[var(--text-secondary)]">BGV check</span>
+                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
+                  <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
+                  Mandatory (PCC + Emp)
+                </span>
               </div>
             )}
             <div className="py-2 flex justify-between gap-2">
