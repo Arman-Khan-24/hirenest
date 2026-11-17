@@ -148,6 +148,16 @@ export const RequirementFormModal: React.FC<{
   const [vendorChargePct, setVendorChargePct] = useState<string>(
     initialRequirement?.vendor_charge_pct != null ? String(initialRequirement.vendor_charge_pct) : ''
   );
+  const [totalClientFeePct, setTotalClientFeePct] = useState<string>(
+    initialRequirement?.vendor_charge_pct != null
+      ? initialMargins?.platform_margin != null && initialMargins?.margin_type === 'percentage'
+        ? String(Number(initialRequirement.vendor_charge_pct) + Number(initialMargins.platform_margin))
+        : String(Number(initialRequirement.vendor_charge_pct) * 2)
+      : ''
+  );
+  const [importantNotesInput, setImportantNotesInput] = useState<string>(
+    initialMeta.notes || ''
+  );
   const [currency, setCurrency] = useState<string>(initialMeta.baseCurrency || 'INR');
 
   const [fieldErrors, setFieldErrors] = useState< Partial<Record<string, string>> >({});
@@ -266,6 +276,16 @@ export const RequirementFormModal: React.FC<{
     setVendorChargePct(
       initialRequirement?.vendor_charge_pct != null ? String(initialRequirement.vendor_charge_pct) : ''
     );
+    const feeVendor = initialRequirement?.vendor_charge_pct;
+    const feeMargin = initialMargins?.platform_margin;
+    setTotalClientFeePct(
+      feeVendor != null
+        ? feeMargin != null && initialMargins?.margin_type === 'percentage'
+          ? String(Number(feeVendor) + Number(feeMargin))
+          : String(Number(feeVendor) * 2)
+        : ''
+    );
+    setImportantNotesInput(parsed.notes || '');
     setCurrency(parsed.baseCurrency || 'INR');
     setFieldErrors({});
 
@@ -521,6 +541,7 @@ export const RequirementFormModal: React.FC<{
         profileType: profileType || null,
         hasBgv,
         paymentTerms: financialNotesInput.trim() || null,
+        notes: importantNotesInput.trim() || null,
         hourlyRate: null,
         workingDaysPerMonth:
           budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
@@ -1001,20 +1022,67 @@ export const RequirementFormModal: React.FC<{
             ]}
           />
         </div>
-        {/* Vendor Placement Fee — only for FTE requirements, visible to admins/recruiters */}
+        {/* Vendor Placement Fee & Commercial Margins — only for FTE requirements */}
         {employmentType === 'full_time' && (
-          <div className="mt-3">
-            <Input
-              label="Vendor service fee (% of CTC)"
-              type="number"
-              min={0}
-              max={100}
-              step={0.5}
-              placeholder="e.g. 2"
-              hint="Percentage of candidate CTC owed to the placing vendor upon hire. Shown in vendor workspace as Vendor service fee."
-              value={vendorChargePct}
-              onChange={(e) => setVendorChargePct(e.target.value)}
-            />
+          <div className="mt-3 rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-1">
+              <span className="text-[12px] font-semibold text-[var(--text-primary)]">
+                FTE Placement Fee &amp; Margins
+              </span>
+              <span className="text-[11px] text-[var(--text-secondary)]">
+                50% Vendor share · 50% HireNest Platform margin
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <Input
+                label="Total client fee (% of CTC)"
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                placeholder="e.g. 4"
+                value={totalClientFeePct}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setTotalClientFeePct(val);
+                  if (val.trim() !== '' && !Number.isNaN(Number(val))) {
+                    const half = (Number(val) / 2).toFixed(2).replace(/\.00$/, '');
+                    setVendorChargePct(half);
+                    setPlatformMarginInput(half);
+                    setMarginTypeInput('percentage');
+                    marginsTouchedRef.current = true;
+                  }
+                }}
+                hint="Total agreed client placement fee (e.g. 4%). Calculates 50/50 split."
+              />
+              <Input
+                label="Vendor service fee (% of CTC)"
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                placeholder="e.g. 2"
+                value={vendorChargePct}
+                onChange={(e) => setVendorChargePct(e.target.value)}
+                hint="Vendor share (shown in vendor workspace as Vendor service fee)."
+              />
+              <Input
+                label="HireNest Platform margin (% of CTC)"
+                type="number"
+                min={0}
+                max={100}
+                step={0.5}
+                placeholder="e.g. 2"
+                value={platformMarginInput}
+                onChange={(e) => {
+                  marginsTouchedRef.current = true;
+                  setPlatformMarginInput(e.target.value);
+                  setMarginTypeInput('percentage');
+                }}
+                hint="HireNest internal margin on candidate CTC upon successful hire."
+              />
+            </div>
           </div>
         )}
 
@@ -1211,7 +1279,16 @@ export const RequirementFormModal: React.FC<{
             />
           </div>
 
-          {isAdmin && (
+          <Textarea
+            rows={2}
+            label="Important notes & instructions (visible to vendors & candidates)"
+            placeholder="e.g. Candidate should be your inhouse bench resource; immediate joining required; 2 technical rounds..."
+            value={importantNotesInput}
+            onChange={(e) => setImportantNotesInput(e.target.value)}
+            hint="Shown in the right-side extra details column in both vendor workspace and job boards."
+          />
+
+          {isAdmin && employmentType !== 'full_time' && (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <Input
                 label="Platform margin (admin)"

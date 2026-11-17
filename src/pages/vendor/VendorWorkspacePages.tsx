@@ -11,7 +11,7 @@ import {
 } from '../../components/domain/RequirementRibbon';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, Star, ShieldCheck, CreditCard } from 'lucide-react';
+import { Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, Star, ShieldCheck, CreditCard, FileText } from 'lucide-react';
 import {
   PageHeader,
   MetricStrip,
@@ -1416,6 +1416,17 @@ export const VendorRequirementDetailPage: React.FC = () => {
               </div>
               <p className="text-[11px] leading-relaxed text-[var(--text-secondary)]">
                 Commercial payment terms applicable to placing vendor agency.
+              </p>
+            </div>
+          )}
+          {reqMeta.notes && (
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-1.5">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] flex items-center gap-1.5">
+                <FileText className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                <span>Important notes &amp; instructions</span>
+              </div>
+              <p className="text-[13px] leading-relaxed font-medium text-[var(--text-primary)] whitespace-pre-line">
+                {reqMeta.notes}
               </p>
             </div>
           )}

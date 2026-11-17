@@ -49,6 +49,7 @@ import { useAuth } from '../../auth/AuthProvider';
 import { mapSupabaseError } from '../../lib/errors';
 import { computeFileSha256, validateResumeFile } from '../../lib/hash';
 import { recordPrivacyAcknowledgementApi } from '../../lib/dpdpPrivacy';
+import { parseRequirementMeta } from '../../lib/enterpriseLifecycle';
 import {
   formatLocalDate,
   formatRelativeTime,
@@ -859,21 +860,34 @@ export const CandidateBrowseJobsPage: React.FC = () => {
         onClose={() => setSelectedJob(null)}
         title={selectedJob ? `Apply to ${selectedJob.title}` : 'Apply to job'}
       >
-        {selectedJob && (
-          <div className="space-y-4">
-            <p className="text-[13px] text-[var(--text-secondary)] whitespace-pre-line max-h-60 overflow-y-auto">
-              {selectedJob.description}
-            </p>
-            <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setSelectedJob(null)}>
-                Cancel
-              </Button>
-              <Button onClick={handleApply} loading={applying}>
-                Confirm application
-              </Button>
+        {selectedJob && (() => {
+          const jobMeta = parseRequirementMeta(selectedJob);
+          return (
+            <div className="space-y-4">
+              {jobMeta.notes && (
+                <div className="rounded-[8px] border border-blue-500/30 bg-blue-500/5 p-3 space-y-1">
+                  <div className="text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+                    Important Instructions &amp; Requirements
+                  </div>
+                  <p className="text-[13px] leading-relaxed text-[var(--text-primary)] whitespace-pre-line">
+                    {jobMeta.notes}
+                  </p>
+                </div>
+              )}
+              <p className="text-[13px] text-[var(--text-secondary)] whitespace-pre-line max-h-60 overflow-y-auto">
+                {selectedJob.description}
+              </p>
+              <div className="flex justify-end gap-2">
+                <Button variant="outline" onClick={() => setSelectedJob(null)}>
+                  Cancel
+                </Button>
+                <Button onClick={handleApply} loading={applying}>
+                  Confirm application
+                </Button>
+              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </Dialog>
     </div>
   );

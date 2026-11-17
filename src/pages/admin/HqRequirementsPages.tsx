@@ -92,6 +92,7 @@ import { fetchOrganizations, fetchAuditLogs } from '../../api/admin';
 import { useAuth } from '../../auth/AuthProvider';
 import {
   detectDuplicateRequirementGroups,
+  parseRequirementMeta,
   type DuplicateRequirementGroup,
 } from '../../lib/enterpriseLifecycle';
 import { mapSupabaseError } from '../../lib/errors';
@@ -1439,6 +1440,7 @@ export const HqRequirementDetailPage: React.FC = () => {
   };
 
   const submissions = submissionsData?.data || [];
+  const reqMeta = useMemo(() => parseRequirementMeta(req), [req]);
 
   const statusOptions = ['open', 'on_hold', 'closed', 'filled', 'draft'] as const;
 
@@ -2446,11 +2448,11 @@ export const HqRequirementDetailPage: React.FC = () => {
                 </span>
               </div>
             )}
-            {financials?.notes && (
+            {(financials?.notes || reqMeta.paymentTerms) && (
               <div className="py-2 flex justify-between items-center gap-2">
                 <span className="text-[var(--text-secondary)]">Payment terms</span>
                 <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
-                  {financials.notes}
+                  {financials?.notes || reqMeta.paymentTerms}
                 </span>
               </div>
             )}
@@ -2482,32 +2484,19 @@ export const HqRequirementDetailPage: React.FC = () => {
                 )}
               </div>
             </div>
-            <div className="py-2 flex justify-between gap-2">
-              <span className="text-[var(--text-secondary)]">Client budget</span>
-              <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
-                {formatFinancialAmount(financials?.actual_client_budget, req)}
-              </span>
-            </div>
-            <div className="py-2 flex justify-between gap-2">
-              <span className="text-[var(--text-secondary)]">Financial notes</span>
-              <span className="text-right text-[12px] text-[var(--text-primary)] max-w-[180px] break-words">
-                {financials?.notes || '-'}
-              </span>
-            </div>
-            {isAdmin && (
-              <div className="py-2 flex justify-between gap-2">
-                <span className="text-[var(--text-secondary)]">Platform margin</span>
-                <span className="font-mono tabular-nums font-medium text-[var(--text-primary)]">
-                  {margins?.platform_margin !== null &&
-                  margins?.platform_margin !== undefined
-                    ? margins.margin_type === 'percentage'
-                      ? `${margins.platform_margin}%`
-                      : formatFinancialAmount(margins.platform_margin, req)
-                    : '-'}
-                </span>
-              </div>
-            )}
           </div>
+
+          {reqMeta.notes && (
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-1.5 mt-3">
+              <div className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] flex items-center gap-1.5">
+                <MessageSquare className="h-3.5 w-3.5 text-[var(--text-secondary)]" />
+                <span>Important notes &amp; instructions</span>
+              </div>
+              <p className="text-[13px] leading-relaxed font-medium text-[var(--text-primary)] whitespace-pre-line">
+                {reqMeta.notes}
+              </p>
+            </div>
+          )}
         </aside>
       </div>
 

@@ -38,6 +38,7 @@ export interface RequirementExtendedMeta {
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
   paymentTerms?: string | null;
+  notes?: string | null;
 }
 
 export interface RequirementExtras {
@@ -48,6 +49,7 @@ export interface RequirementExtras {
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
   paymentTerms?: string | null;
+  notes?: string | null;
 }
 
 export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras {
@@ -59,6 +61,7 @@ export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras
     profileType: meta.profileType ?? null,
     hasBgv: meta.hasBgv ?? null,
     paymentTerms: meta.paymentTerms ?? null,
+    notes: meta.notes ?? null,
   };
 }
 
@@ -478,6 +481,9 @@ export function encodeRequirementMetaToCurrency(params: {
   if (params.paymentTerms && params.paymentTerms.trim() !== '') {
     encoded += `|terms=${encodeURIComponent(params.paymentTerms.trim())}`;
   }
+  if (params.notes && params.notes.trim() !== '') {
+    encoded += `|reqnotes=${encodeURIComponent(params.notes.trim())}`;
+  }
   if (params.isDeleted) {
     const safeAt = encodeURIComponent(params.deletedAt || new Date().toISOString());
     const safeBy = encodeURIComponent(params.deletedBy || 'admin');
@@ -622,6 +628,15 @@ export function parseRequirementMeta(
     }
   }
 
+  let notes: string | null = null;
+  if (kv.reqnotes) {
+    try {
+      notes = decodeURIComponent(kv.reqnotes);
+    } catch {
+      notes = kv.reqnotes;
+    }
+  }
+
   const result: RequirementExtendedMeta = {
     baseCurrency,
     budgetUnit,
@@ -646,6 +661,7 @@ export function parseRequirementMeta(
           ? false
           : null,
     paymentTerms,
+    notes,
   };
 
   if (reqId) {
