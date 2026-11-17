@@ -473,22 +473,26 @@ export async function fetchRequirements(params: {
     const backendCatalog = await fetchVendorCatalogFromBackend();
     const byId = new Map<string, Requirement>();
     for (const r of allRows) {
-      if (!isRequirementSoftDeleted(r) && r.status !== 'closed' && r.status !== 'filled') {
-        byId.set(r.id, r);
+      if (!isRequirementSoftDeleted(r)) {
+        if (params.status && r.status !== params.status) continue;
+        if (r.status !== 'closed' && r.status !== 'filled') {
+          byId.set(r.id, r);
+        }
       }
     }
     for (const r of backendCatalog.requirements) {
       if (
         !byId.has(r.id) &&
-        !isRequirementSoftDeleted(r) &&
-        r.status !== 'closed' &&
-        r.status !== 'filled'
+        !isRequirementSoftDeleted(r)
       ) {
-        if (
-          !params.search?.trim() ||
-          r.title.toLowerCase().includes(params.search.trim().toLowerCase())
-        ) {
-          byId.set(r.id, r);
+        if (params.status && r.status !== params.status) continue;
+        if (r.status !== 'closed' && r.status !== 'filled') {
+          if (
+            !params.search?.trim() ||
+            r.title.toLowerCase().includes(params.search.trim().toLowerCase())
+          ) {
+            byId.set(r.id, r);
+          }
         }
       }
     }
@@ -499,6 +503,9 @@ export async function fetchRequirements(params: {
 
   let filtered = allRows.filter((req) => {
     if (!params.includeDeleted && isRequirementSoftDeleted(req)) {
+      return false;
+    }
+    if (params.status && req.status !== params.status) {
       return false;
     }
     const meta = parseRequirementMeta(req);

@@ -1896,7 +1896,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
     setManualReqDupReason(null);
     try {
       const res = await fetchRequirements({ status: 'open', forVendor: true, pageSize: 200 } as Parameters<typeof fetchRequirements>[0]);
-      setManualReqList(res.data);
+      setManualReqList(res.data.filter((r) => r.status === 'open'));
     } catch {
       toast({ title: 'Could not load requirements', tone: 'error' });
     } finally {
@@ -2926,7 +2926,9 @@ export const VendorMatchIntelligencePage: React.FC = () => {
     queryKey: ['vendor_requirements_for_matches'],
     queryFn: () => fetchRequirements({ page: 1, pageSize: 200, status: 'open', forVendor: true }),
   });
-  const requirements = reqsData?.data || [];
+  const requirements = useMemo(() => {
+    return (reqsData?.data || []).filter((r) => r.status === 'open');
+  }, [reqsData?.data]);
 
   // 2. Fetch all candidates owned by this vendor
   const { data: candsData, isLoading: loadingCands } = useQuery({
