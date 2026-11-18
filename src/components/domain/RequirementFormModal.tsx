@@ -588,11 +588,12 @@ export const RequirementFormModal: React.FC<{
       savedRequirementRef.current = savedReq;
 
       if (isHq && publishForVendors) {
-        await publishAndShareRequirementWithAllVendors({
+        savedReq = { ...savedReq, status: 'open' };
+        // Trigger vendor distribution & match computation in background (non-blocking)
+        void publishAndShareRequirementWithAllVendors({
           requirementId: savedReq.id,
           slaHours: values.submission_sla_hours,
         });
-        savedReq = { ...savedReq, status: 'open' };
       }
 
       // Fire-and-forget financials/margins — non-blocking, don't delay the form close

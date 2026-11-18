@@ -699,7 +699,7 @@ export async function createRequirement(
   const executeCreation = (async (): Promise<
     Requirement & { wasDuplicatePrevented?: boolean }
   > => {
-    await hydrateDeletedRequirementsFromBackend();
+    void hydrateDeletedRequirementsFromBackend();
 
     // 2. Check server-side atomic idempotency guard
     try {
