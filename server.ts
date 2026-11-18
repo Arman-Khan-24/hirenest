@@ -26,7 +26,16 @@ import { extractStructuredFieldsFromText } from './src/lib/resumeParser';
 import { registerStaffRoutes, registerStaffEnforcement } from './staffRoutes';
 import { registerVendorTeamRoutes } from './vendorTeamRoutes';
 import { registerAiInterviewRoutes, createSupabaseStore } from './aiInterviewRoutes';
-import { sendEmailResult, runReusableCandidateAlerts, runSlaAlerts, runSlaAutoClose, runMorningDigest, runComplianceAlerts } from './alertsEngine';
+import {
+  sendEmailResult,
+  runReusableCandidateAlerts,
+  runSlaAlerts,
+  runSlaAutoClose,
+  runMorningDigest,
+  runComplianceAlerts,
+  notifyCandidateSubmittedToClient,
+  notifyRequirementCandidateMatches,
+} from './alertsEngine';
 import {
   type PrivacyNoticeRecord,
   type PrivacyAcknowledgementRecord,
@@ -4058,6 +4067,16 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     });
 
     saveEnterpriseStore(enterpriseStore);
+
+    if (effectiveAction === 'submit_to_client' || effectiveRecord.validationStage === 'submitted_to_client') {
+      const adminClient = getSupabaseAdmin();
+      if (adminClient) {
+        void notifyCandidateSubmittedToClient(adminClient, subId).catch((e) =>
+          console.warn('[submit-to-client] email notification failed:', e)
+        );
+      }
+    }
+
     res.json({
       ok: true,
       record: enterpriseStore.submissionValidations[subId],
@@ -5283,10 +5302,52 @@ Return JSON array of objects with fields: targetSkill, question.`;
       if (job === 'sla' || job === 'reusable' || job === 'all') out.reusable = await runReusableCandidateAlerts(admin);
       if (job === 'morning' || job === 'all') out.morning = await runMorningDigest(admin);
       if (job === 'compliance' || job === 'all') out.compliance = await runComplianceAlerts(admin);
-      res.json({ ok: true, emailConfigured: Boolean(process.env.RESEND_API_KEY), ...out });
+      if (job === 'matches' && typeof req.query.reqId === 'string') {
+        out.matches = await notifyRequirementCandidateMatches(admin, req.query.reqId);
+      }
+      res.json({
+        ok: true,
+        resendConfigured: Boolean(process.env.RESEND_API_KEY),
+        smtpConfigured: Boolean(process.env.SMTP_HOST && (process.env.SMTP_PASS || process.env.SMTP_PASSWORD)),
+        ...out,
+      });
     } catch (err) {
       res.status(500).json({ error: err instanceof Error ? err.message : 'Alert run failed' });
     }
+  });
+
+  // Diagnostic endpoint to check Resend & SMTP routing status
+  app.get('/api/admin/email/status', async (req, res) => {
+    const caller = await authenticateStaffingCaller(req);
+    if (!caller.ok) {
+      res.status(caller.status).json({ error: caller.message });
+      return;
+    }
+    const hasResend = Boolean(process.env.RESEND_API_KEY);
+    const smtpHost = process.env.SMTP_HOST || '';
+    const smtpUser = process.env.SMTP_USER || '';
+    const hasSmtp = Boolean(smtpHost && smtpUser && (process.env.SMTP_PASS || process.env.SMTP_PASSWORD));
+
+    res.json({
+      ok: true,
+      channels: {
+        resend: {
+          configured: hasResend,
+          purpose: 'Invites & User/Team Management ONLY',
+          sender: process.env.RESEND_INVITE_FROM || 'invites@hirenestworkforce.com',
+        },
+        smtp: {
+          configured: hasSmtp,
+          purpose: 'Operational, Job Auto-Closed, Candidate Matching & Submission Alerts',
+          host: smtpHost,
+          user: smtpUser,
+          jobAutoCloseSender: 'gopal@hirenestworkforce.com',
+          matchAlertsSender: 'gopal@hirenestworkforce.com',
+          candidateSubmitSender: 'gopal@hirenestworkforce.com',
+          opsSender: 'admin@hirenestworkforce.com / praveen@hirenestworkforce.com',
+        },
+      },
+    });
   });
 
   // User & Team Management (RBAC) — server-enforced

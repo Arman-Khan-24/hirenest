@@ -1,6 +1,6 @@
 import type express from 'express';
 import type { SupabaseClient } from '@supabase/supabase-js';
-import { sendEmailResult } from './alertsEngine';
+import { sendInviteEmailViaResend } from './emailService';
 
 type AuthOk = { ok: true; userId: string; role: string; orgId: string | null };
 type AuthResult = AuthOk | { ok: false; status: number; message: string };
@@ -167,11 +167,11 @@ export function registerVendorTeamRoutes(app: express.Express, deps: Deps): void
     // 3. Try sending email via Resend if inviteLink was generated and email wasn't delivered via Supabase
     if (inviteLink && !emailSent) {
       try {
-        const emailRes = await sendEmailResult(
-          [email],
-          `You've been invited to HireNest as ${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}`,
-          `<p>Hi ${name},</p><p>You have been invited to join your agency team on HireNest as a <strong>${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}</strong>.</p><p><a href="${inviteLink}" style="display:inline-block;background:#1D5FD1;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">Set your password & get started</a></p><p style="color:#6b7280;font-size:12px;">Or copy and paste this link into your browser:<br/><a href="${inviteLink}">${inviteLink}</a></p>`
-        );
+        const emailRes = await sendInviteEmailViaResend({
+          to: [email],
+          subject: `You've been invited to HireNest as ${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}`,
+          html: `<p>Hi ${name},</p><p>You have been invited to join your agency team on HireNest as a <strong>${role === 'vendor_admin' ? 'Vendor Admin' : 'Vendor Recruiter'}</strong>.</p><p><a href="${inviteLink}" style="display:inline-block;background:#1D5FD1;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:600;">Set your password & get started</a></p><p style="color:#6b7280;font-size:12px;">Or copy and paste this link into your browser:<br/><a href="${inviteLink}">${inviteLink}</a></p>`,
+        });
         if (emailRes.ok) emailSent = true;
       } catch (e) {
         console.warn('[vendor-team] Email send fallback failed:', e);
@@ -297,11 +297,11 @@ export function registerVendorTeamRoutes(app: express.Express, deps: Deps): void
     inviteLink = link.data?.properties?.action_link || null;
 
     if (inviteLink) {
-      const emailRes = await sendEmailResult(
-        [prof.email],
-        'Activate your HireNest agency account',
-        `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and access your HireNest agency account.</p><p><a href="${inviteLink}" style="display:inline-block;padding:10px 18px;background:#1D5FD1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#6b7280">Or copy and paste this link:<br/><a href="${inviteLink}">${inviteLink}</a></p>`
-      );
+      const emailRes = await sendInviteEmailViaResend({
+        to: [prof.email],
+        subject: 'Activate your HireNest agency account',
+        html: `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and access your HireNest agency account.</p><p><a href="${inviteLink}" style="display:inline-block;padding:10px 18px;background:#1D5FD1;color:#fff;border-radius:6px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#6b7280">Or copy and paste this link:<br/><a href="${inviteLink}">${inviteLink}</a></p>`,
+      });
       if (emailRes.ok) emailSent = true;
     }
 

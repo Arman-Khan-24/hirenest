@@ -1,5 +1,5 @@
 import type express from 'express';
-import { sendEmailResult } from './alertsEngine';
+import { sendInviteEmailViaResend } from './emailService';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
   DEFAULT_TEMPLATES,
@@ -358,11 +358,11 @@ export function registerStaffRoutes(app: express.Express, deps: Deps): void {
     }
 
     if (inviteLink && !emailSent) {
-      void sendEmailResult(
-        [email],
-        'Activate your HireNestOS account',
-        `<p>Hi ${name},</p><p>You have been added to HireNest internal staff as <strong>${role}</strong>.</p><p><a href="${inviteLink}">Click here to set your password</a></p>`
-      );
+      void sendInviteEmailViaResend({
+        to: [email],
+        subject: 'Activate your HireNestOS account',
+        html: `<p>Hi ${name},</p><p>You have been added to HireNest internal staff as <strong>${role}</strong>.</p><p><a href="${inviteLink}">Click here to set your password</a></p>`,
+      });
     }
 
     const { data: internalOrg } = await admin.from('organizations').select('id').eq('type', 'internal').maybeSingle();
@@ -595,11 +595,11 @@ export function registerStaffRoutes(app: express.Express, deps: Deps): void {
       if (!actionLink) {
         reasons.push(`link: ${link.error?.message || 'no link returned'}`);
       } else {
-        const out = await sendEmailResult(
-          [prof.email],
-          'Activate your HireNestOS account',
-          `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and activate your HireNestOS account.</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 22px;background:#1F4CC4;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#667085">If you did not expect this, ignore this email.</p>`
-        );
+        const out = await sendInviteEmailViaResend({
+          to: [prof.email],
+          subject: 'Activate your HireNestOS account',
+          html: `<p>Hi ${prof.full_name || ''},</p><p>Use the button below to set your password and activate your HireNestOS account.</p><p><a href="${actionLink}" style="display:inline-block;padding:12px 22px;background:#1F4CC4;color:#fff;border-radius:8px;text-decoration:none;font-weight:600">Set password</a></p><p style="font-size:12px;color:#667085">If you did not expect this, ignore this email.</p>`,
+        });
         sent = out.ok;
         if (!out.ok) reasons.push(out.error || 'Resend failed');
       }

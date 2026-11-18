@@ -1,10 +1,17 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { computeFineTunedCandidateMatch } from './src/lib/matchingEngine';
 import type { Candidate, Requirement } from './src/types/db';
+import { sendNotificationEmailViaSmtp } from './emailService';
 
 /**
- * Alert engine: in-app notifications + email (Resend REST API when RESEND_API_KEY is set).
+ * Alert engine: in-app notifications + SMTP email.
  * Every alert is deduplicated through public.alert_log so cron retries never double-send.
+ * 
+ * SENDER ROUTING:
+ * - Job auto-closed alerts: gopal@hirenestworkforce.com
+ * - Candidate matching alerts to admin & vendors: gopal@hirenestworkforce.com
+ * - Candidate submitted to client alerts: gopal@hirenestworkforce.com
+ * - SLA warnings & operations: admin@hirenestworkforce.com / praveen@hirenestworkforce.com
  */
 
 const APP_URL = () => process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com';
@@ -15,37 +22,26 @@ const MIN_MATCH = 70;
 export async function sendEmailResult(
   to: string[],
   subject: string,
-  html: string
+  html: string,
+  from?: 'gopal' | 'admin' | 'praveen' | string
 ): Promise<{ ok: boolean; error?: string }> {
-  const key = process.env.RESEND_API_KEY;
-  if (!key) return { ok: false, error: 'RESEND_API_KEY is not set on the server' };
   if (to.length === 0) return { ok: false, error: 'No recipient' };
-  const from = process.env.ALERT_FROM_EMAIL || 'HireNest <alerts@os.hirenestworkforce.com>';
-  try {
-    const res = await fetch('https://api.resend.com/emails', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from, to, subject, html }),
-    });
-    if (res.ok) return { ok: true };
-    const body = (await res.text()).slice(0, 300);
-    let detail = body;
-    try {
-      detail = (JSON.parse(body) as { message?: string }).message || body;
-    } catch {
-      /* keep raw body */
-    }
-    console.warn('[sendEmail] Resend rejected the message:', res.status, detail);
-    return { ok: false, error: `Resend ${res.status}: ${detail} (sender: ${from})` };
-  } catch (e) {
-    const msg = e instanceof Error ? e.message : String(e);
-    console.warn('[sendEmail] Resend request failed:', msg);
-    return { ok: false, error: `Resend request failed: ${msg}` };
-  }
+  const res = await sendNotificationEmailViaSmtp({
+    to,
+    subject,
+    html,
+    from: from || 'admin@hirenestworkforce.com',
+  });
+  return { ok: res.ok, error: res.error };
 }
 
-export async function sendEmail(to: string[], subject: string, html: string): Promise<boolean> {
-  return (await sendEmailResult(to, subject, html)).ok;
+export async function sendEmail(
+  to: string[],
+  subject: string,
+  html: string,
+  from?: 'gopal' | 'admin' | 'praveen' | string
+): Promise<boolean> {
+  return (await sendEmailResult(to, subject, html, from)).ok;
 }
 
 /** Returns true if this dedupe key is new (and records it). */
@@ -57,15 +53,36 @@ async function claim(admin: SupabaseClient, key: string): Promise<boolean> {
 async function notifyUsers(
   admin: SupabaseClient,
   users: Array<{ id: string; email: string | null }>,
-  n: { kind: string; title: string; body: string; link: string }
+  n: { kind: string; title: string; body: string; link: string },
+  from?: 'gopal' | 'admin' | 'praveen' | string
 ): Promise<number> {
   if (users.length === 0) return 0;
-  await admin.from('notifications').insert(
-    users.map((u) => ({ user_id: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link }))
+
+  // Insert in-app notifications for valid profile IDs
+  const validDbUsers = users.filter((u) => u.id && u.id.length > 20 && !u.id.endsWith('_hq'));
+  if (validDbUsers.length > 0) {
+    await admin.from('notifications').insert(
+      validDbUsers.map((u) => ({ user_id: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link }))
+    ).catch(() => {});
+  }
+
+  const emails = Array.from(
+    new Set(users.map((u) => u.email?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))
   );
-  const emails = users.map((u) => u.email).filter((e): e is string => Boolean(e));
-  const html = `<p>${n.body}</p><p><a href="${APP_URL()}${n.link}">Open in HireNest</a></p>`;
-  await sendEmail(emails, n.title, html);
+
+  const html = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <h2 style="color: #0f172a; margin-top: 0; font-size: 18px;">${n.title}</h2>
+      <p style="font-size: 14px; color: #334155;">${n.body}</p>
+      <div style="margin-top: 24px;">
+        <a href="${APP_URL()}${n.link}" style="display: inline-block; padding: 10px 20px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">Open in HireNest</a>
+      </div>
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 24px 0 16px;" />
+      <p style="font-size: 12px; color: #94a3b8; margin: 0;">HireNest Workforce Private Limited · Automated Operational Notification</p>
+    </div>
+  `;
+
+  await sendEmail(emails, n.title, html, from);
   return users.length;
 }
 
@@ -78,13 +95,32 @@ async function orgUsers(admin: SupabaseClient, orgId: string) {
   return (data || []) as Array<{ id: string; email: string | null }>;
 }
 
-async function staffUsers(admin: SupabaseClient, roles: string[] = ['admin']) {
+async function staffUsers(admin: SupabaseClient, roles: string[] = ['admin', 'recruiter']) {
   const { data } = await admin
     .from('profiles')
     .select('id, email')
     .in('role', roles)
     .eq('status', 'active');
-  return (data || []) as Array<{ id: string; email: string | null }>;
+
+  const map = new Map<string, { id: string; email: string | null }>();
+  for (const u of data || []) {
+    if (u.email) map.set(u.email.toLowerCase().trim(), u);
+  }
+
+  // Ensure both Gopal and Praveen (and admin) are always in staff recipients:
+  const mandatoryStaff = [
+    { id: 'gopal_hq', email: 'gopal@hirenestworkforce.com' },
+    { id: 'praveen_hq', email: 'praveen@hirenestworkforce.com' },
+    { id: 'admin_hq', email: 'admin@hirenestworkforce.com' },
+  ];
+
+  for (const m of mandatoryStaff) {
+    if (!map.has(m.email.toLowerCase())) {
+      map.set(m.email.toLowerCase(), m);
+    }
+  }
+
+  return Array.from(map.values());
 }
 
 /** Run every ~10 min: warn vendors with <=30 min left of their 2h SLA and no submission yet. */
@@ -163,12 +199,17 @@ export async function runMorningDigest(admin: SupabaseClient): Promise<{ vendors
       matches = count || 0;
     }
     if (!(await claim(admin, `morning:${v.id}:${day}`))) continue;
-    vendorsNotified += await notifyUsers(admin, await orgUsers(admin, v.id), {
-      kind: 'morning_digest',
-      title: `Good morning — ${sharedIds.length} open requirement(s), ${matches} matching profile(s)`,
-      body: `${sharedIds.length} open requirement(s) are shared with you and ${matches} of your profiles match at ${MIN_MATCH}% or higher. Submit early to hold your SLA.`,
-      link: '/vendor/requirements',
-    });
+    vendorsNotified += await notifyUsers(
+      admin,
+      await orgUsers(admin, v.id),
+      {
+        kind: 'morning_digest',
+        title: `Good morning — ${sharedIds.length} open requirement(s), ${matches} matching profile(s)`,
+        body: `${sharedIds.length} open requirement(s) are shared with you and ${matches} of your profiles match at ${MIN_MATCH}% or higher. Submit early to hold your SLA.`,
+        link: '/vendor/requirements',
+      },
+      'gopal@hirenestworkforce.com'
+    );
   }
 
   // Admins / ops: candidate-requirement matches created in the last 24h.
@@ -181,12 +222,17 @@ export async function runMorningDigest(admin: SupabaseClient): Promise<{ vendors
     .gte('calculated_at', since);
   let adminsNotified = 0;
   if ((newMatches || 0) > 0 && (await claim(admin, `match-digest:${day}`))) {
-    adminsNotified = await notifyUsers(admin, await staffUsers(admin, ['admin', 'recruiter']), {
-      kind: 'match_digest',
-      title: `${newMatches} new candidate match(es) in the last 24h`,
-      body: `${newMatches} candidate(s) now match an open requirement at ${MIN_MATCH}% or higher.`,
-      link: '/admin/requirements',
-    });
+    adminsNotified = await notifyUsers(
+      admin,
+      await staffUsers(admin, ['admin', 'recruiter']),
+      {
+        kind: 'match_digest',
+        title: `${newMatches} new candidate match(es) in the last 24h`,
+        body: `${newMatches} candidate(s) now match an open requirement at ${MIN_MATCH}% or higher.`,
+        link: '/admin/requirements',
+      },
+      'gopal@hirenestworkforce.com'
+    );
   }
   return { vendors: vendorsNotified, admins: adminsNotified };
 }
@@ -221,13 +267,38 @@ export async function runSlaAutoClose(admin: SupabaseClient): Promise<{ closed: 
 
     closed++;
 
-    // Notify admins/recruiters
-    await notifyUsers(admin, await staffUsers(admin, ['admin', 'recruiter']), {
-      kind: 'sla_auto_close',
-      title: `Requirement auto-closed: ${r.title}`,
-      body: `"${r.title}" was automatically closed after its ${r.submission_sla_hours}-hour SLA expired. Re-open it from the requirement detail page to set a new SLA.`,
-      link: `/admin/requirements/${r.id}`,
-    });
+    // Notify admins (Gopal & Praveen) via SMTP from gopal@hirenestworkforce.com
+    await notifyUsers(
+      admin,
+      await staffUsers(admin, ['admin', 'recruiter']),
+      {
+        kind: 'sla_auto_close',
+        title: `Requirement auto-closed: ${r.title}`,
+        body: `"${r.title}" was automatically closed after its ${r.submission_sla_hours}-hour SLA expired. Re-open it from the requirement detail page to set a new SLA.`,
+        link: `/admin/requirements/${r.id}`,
+      },
+      'gopal@hirenestworkforce.com'
+    );
+
+    // Also notify mapped vendors whose SLA expired
+    const { data: shares } = await admin
+      .from('requirement_vendor_shares')
+      .select('vendor_org_id')
+      .eq('requirement_id', r.id);
+
+    for (const sh of shares || []) {
+      await notifyUsers(
+        admin,
+        await orgUsers(admin, sh.vendor_org_id),
+        {
+          kind: 'sla_auto_close',
+          title: `Requirement SLA window concluded: ${r.title}`,
+          body: `The active submission window for "${r.title}" has concluded. Thank you for your submissions.`,
+          link: `/vendor/requirements/${r.id}`,
+        },
+        'gopal@hirenestworkforce.com'
+      );
+    }
   }
   return { closed };
 }
@@ -332,4 +403,110 @@ export async function runReusableCandidateAlerts(admin: SupabaseClient): Promise
     });
   }
   return { requirements: reqs.length, notified };
+}
+
+/**
+ * Triggered on candidate submission to client:
+ * Sends SMTP email from gopal@hirenestworkforce.com to client, vendor, and admin.
+ */
+export async function notifyCandidateSubmittedToClient(
+  admin: SupabaseClient,
+  submissionId: string
+): Promise<void> {
+  const { data: sub } = await admin
+    .from('submissions')
+    .select('id, candidate_id, requirement_id, vendor_org_id, candidates(full_name), requirements(title, client_org_id)')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (!sub) return;
+
+  const candidateName = (sub.candidates as any)?.full_name || 'Candidate';
+  const reqTitle = (sub.requirements as any)?.title || 'Requirement';
+  const clientOrgId = (sub.requirements as any)?.client_org_id;
+
+  const recipients = await staffUsers(admin, ['admin', 'recruiter']);
+  if (clientOrgId) {
+    const clientStaff = await orgUsers(admin, clientOrgId);
+    recipients.push(...clientStaff);
+  }
+  if (sub.vendor_org_id) {
+    const vendorStaff = await orgUsers(admin, sub.vendor_org_id);
+    recipients.push(...vendorStaff);
+  }
+
+  await notifyUsers(
+    admin,
+    recipients,
+    {
+      kind: 'candidate_submitted_to_client',
+      title: `Candidate Submitted to Client: ${candidateName} for ${reqTitle}`,
+      body: `${candidateName} has completed recruiter validation and has been submitted for client review on "${reqTitle}".`,
+      link: `/admin/submissions/${sub.id}`,
+    },
+    'gopal@hirenestworkforce.com'
+  );
+}
+
+/**
+ * Triggered when candidate matches are computed for an open requirement:
+ * Sends SMTP email from gopal@hirenestworkforce.com to mapped vendors and admins.
+ */
+export async function notifyRequirementCandidateMatches(
+  admin: SupabaseClient,
+  requirementId: string
+): Promise<{ matchesCount: number }> {
+  const { data: req } = await admin
+    .from('requirements')
+    .select('id, title, status')
+    .eq('id', requirementId)
+    .maybeSingle();
+
+  if (!req || req.status !== 'open') return { matchesCount: 0 };
+
+  const { data: matches } = await admin
+    .from('candidate_matches')
+    .select('candidate_id, final_score, candidates(owner_vendor_org_id)')
+    .eq('requirement_id', requirementId)
+    .gte('final_score', MIN_MATCH)
+    .limit(200);
+
+  const count = matches?.length || 0;
+  if (count === 0) return { matchesCount: 0 };
+
+  // Notify HQ Admins (Gopal & Praveen)
+  await notifyUsers(
+    admin,
+    await staffUsers(admin, ['admin', 'recruiter']),
+    {
+      kind: 'candidate_match_alert',
+      title: `${count} matching candidate(s) for "${req.title}"`,
+      body: `Matching engine has identified ${count} qualified profile(s) (>=${MIN_MATCH}%) ready for review on "${req.title}".`,
+      link: `/admin/requirements/${req.id}`,
+    },
+    'gopal@hirenestworkforce.com'
+  );
+
+  // Notify vendors whose candidates match
+  const vendorOrgIds = new Set<string>();
+  for (const m of matches || []) {
+    const orgId = (m.candidates as any)?.owner_vendor_org_id;
+    if (orgId) vendorOrgIds.add(orgId);
+  }
+
+  for (const vendorId of vendorOrgIds) {
+    await notifyUsers(
+      admin,
+      await orgUsers(admin, vendorId),
+      {
+        kind: 'candidate_match_alert',
+        title: `Qualified candidates in your pool for "${req.title}"`,
+        body: `Your agency has candidates matching open requirement "${req.title}". Submit profiles early to maintain your SLA.`,
+        link: `/vendor/requirements/${req.id}`,
+      },
+      'gopal@hirenestworkforce.com'
+    );
+  }
+
+  return { matchesCount: count };
 }
