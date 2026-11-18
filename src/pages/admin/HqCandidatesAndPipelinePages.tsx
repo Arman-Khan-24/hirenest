@@ -1518,20 +1518,20 @@ export const HqSubmissionsPage: React.FC = () => {
       ) : (
         <div>
           <div className="overflow-x-auto border-t border-[var(--border)]">
-            <table>
+            <table className="w-full text-left [&_th]:px-3 [&_td]:px-3 [&_th]:py-2.5 [&_td]:py-2.5">
               <thead>
                 <tr>
-                  <th className="min-w-[160px]">Candidate</th>
-                  <th className="min-w-[200px]">Requirement &amp; client</th>
-                  <th className="min-w-[130px]">Submission stage</th>
-                  <th className="min-w-[150px]">Source &amp; vendor</th>
-                  <th className="min-w-[140px]">JD match &amp; gaps</th>
-                  <th className="min-w-[160px]">Validation gate &amp; rating</th>
-                  <th className="min-w-[110px]">
+                  <th className="min-w-[140px]">Candidate</th>
+                  <th className="min-w-[180px]">Requirement &amp; client</th>
+                  <th className="min-w-[120px]">Submission stage</th>
+                  <th className="min-w-[130px]">Source &amp; vendor</th>
+                  <th className="min-w-[120px]">JD match &amp; gaps</th>
+                  <th className="min-w-[140px]">Validation gate &amp; rating</th>
+                  <th className="min-w-[95px]">
                     <AiScoreHeader />
                   </th>
-                  <th className="min-w-[120px]">Follow-up</th>
-                  <th className="min-w-[120px]">Submitted</th>
+                  <th className="min-w-[100px]">Follow-up</th>
+                  <th className="min-w-[110px]">Submitted</th>
                 </tr>
               </thead>
               <tbody>

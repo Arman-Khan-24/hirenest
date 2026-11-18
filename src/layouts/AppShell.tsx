@@ -829,14 +829,14 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           </div>
         )}
 
-        {/* Content canvas: max-width 1320px, 24px 32px padding */}
-        <main className="flex-1 py-6 px-4 sm:px-8 max-w-[1320px] w-full mx-auto space-y-6">
+        {/* Content canvas: responsive fluid canvas up to 1720px */}
+        <main className="flex-1 py-6 px-4 sm:px-8 max-w-[1720px] w-full mx-auto space-y-6">
           {children}
         </main>
 
         {/* Workspace Footer */}
         <footer className="border-t border-[var(--border)] bg-[var(--surface)] px-4 sm:px-8 py-3">
-          <div className="max-w-[1320px] w-full mx-auto flex flex-wrap items-center justify-between gap-2 text-[12px] leading-[16px] text-[var(--text-tertiary)]">
+          <div className="max-w-[1720px] w-full mx-auto flex flex-wrap items-center justify-between gap-2 text-[12px] leading-[16px] text-[var(--text-tertiary)]">
             <span className="inline-flex items-center gap-2">
               <img
                 src="/assets/aistudio/WhatsApp_Image_2026-10-25_at_12.39.21_03c58b61.jpeg"
