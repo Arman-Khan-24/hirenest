@@ -595,7 +595,8 @@ export const RequirementFormModal: React.FC<{
         savedReq = { ...savedReq, status: 'open' };
       }
 
-      await upsertRequirementFinancials({
+      // Fire-and-forget financials/margins — non-blocking, don't delay the form close
+      void upsertRequirementFinancials({
         requirement_id: savedReq.id,
         actual_client_budget: parsedInternalBudgetNum,
         notes: financialNotesInput.trim() || null,
@@ -606,7 +607,7 @@ export const RequirementFormModal: React.FC<{
           platformMarginInput.trim() !== '' && !Number.isNaN(Number(platformMarginInput))
             ? Number(platformMarginInput)
             : null;
-        await upsertRequirementMargins({
+        void upsertRequirementMargins({
           requirement_id: savedReq.id,
           platform_margin: marginNum,
           margin_type: marginTypeInput,

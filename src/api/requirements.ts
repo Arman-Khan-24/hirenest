@@ -1204,6 +1204,8 @@ export async function updateRequirement(
     vendor_visible_budget: input.vendor_visible_budget,
     currency: input.currency,
     submission_sla_hours: input.submission_sla_hours,
+    // Always include vendor_charge_pct in the primary update (null for non-FTE)
+    vendor_charge_pct: input.vendor_charge_pct ?? null,
   };
 
   let { data, error } = await supabase
@@ -1241,20 +1243,16 @@ export async function updateRequirement(
 
   if (error) throw error;
 
-  // Sync vendor_charge_pct via backend endpoint if provided
-  if (input.vendor_charge_pct !== undefined) {
-    await updateRequirementViaBackend(id, {
-      vendor_charge_pct: input.vendor_charge_pct,
-    });
-    if (data) {
-      (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
-    }
+  // Patch vendor_charge_pct in returned data from the primary update
+  if (data && input.vendor_charge_pct !== undefined) {
+    (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
   }
 
   const updated = { ...(data as Requirement), currency: input.currency };
   saveRequirementExtendedCache(updated.id, inputMeta);
 
-  await syncRequirementMappingWithBackend({
+  // Fire-and-forget backend syncs — do NOT await, they should not block the UI
+  void syncRequirementMappingWithBackend({
     requirementId: updated.id,
     isClientMapped: inputMeta.isClientMapped,
     mappedClientOrgId: inputMeta.mappedClientOrgId,
@@ -1263,7 +1261,7 @@ export async function updateRequirement(
     budgetMin: inputMeta.budgetMin,
     budgetMax: inputMeta.budgetMax,
   });
-  await syncRequirementsCatalogWithBackend([updated]);
+  void syncRequirementsCatalogWithBackend([updated]);
   return updated;
 }
 
