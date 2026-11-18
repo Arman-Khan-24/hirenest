@@ -858,7 +858,8 @@ export async function createRequirement(
     const created = { ...(data as Requirement), currency: input.currency };
 
     if (input.employment_type === 'full_time' && input.vendor_charge_pct != null) {
-      await updateRequirementViaBackend(created.id, {
+      // Fire-and-forget — don't block create on vendor_charge_pct sync
+      void updateRequirementViaBackend(created.id, {
         vendor_charge_pct: input.vendor_charge_pct,
       });
       created.vendor_charge_pct = input.vendor_charge_pct;
@@ -866,8 +867,8 @@ export async function createRequirement(
 
     saveRequirementExtendedCache(created.id, inputMeta);
 
-    // 5. Commit canonical requirement to server idempotency registry
-    await fetch('/api/requirements/idempotent-guard', {
+    // 5. Commit canonical requirement to server idempotency registry (non-blocking)
+    void fetch('/api/requirements/idempotent-guard', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -883,7 +884,8 @@ export async function createRequirement(
       }),
     }).catch(() => undefined);
 
-    await syncRequirementMappingWithBackend({
+    // Fire-and-forget syncs — don't block return
+    void syncRequirementMappingWithBackend({
       requirementId: created.id,
       isClientMapped: inputMeta.isClientMapped,
       mappedClientOrgId: inputMeta.mappedClientOrgId,
@@ -892,7 +894,7 @@ export async function createRequirement(
       budgetMin: inputMeta.budgetMin,
       budgetMax: inputMeta.budgetMax,
     });
-    await syncRequirementsCatalogWithBackend([created]);
+    void syncRequirementsCatalogWithBackend([created]);
     return { ...created, wasDuplicatePrevented: false };
   })();
 
@@ -1243,15 +1245,13 @@ export async function updateRequirement(
 
   if (error) throw error;
 
-  // Always use backend (service-role) to persist vendor_charge_pct,
-  // since the authenticated Postgres role may lack column-level UPDATE privilege.
+  // Always use backend (service-role) to persist vendor_charge_pct — fire-and-forget
   if (input.vendor_charge_pct !== undefined) {
-    const backendResult = await updateRequirementViaBackend(id, {
+    void updateRequirementViaBackend(id, {
       vendor_charge_pct: input.vendor_charge_pct,
     });
-    if (backendResult && data) {
-      (data as Requirement).vendor_charge_pct = backendResult.vendor_charge_pct;
-    } else if (data) {
+    // Patch value in memory immediately so UI shows correct value
+    if (data) {
       (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
     }
   }
