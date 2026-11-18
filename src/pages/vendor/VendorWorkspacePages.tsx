@@ -1358,6 +1358,30 @@ export const VendorRequirementDetailPage: React.FC = () => {
                 </dd>
               </div>
             )}
+            {reqMeta.joiningTimeline && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">Joining</dt>
+                <dd className="font-medium text-[var(--text-primary)] text-right">
+                  {reqMeta.joiningTimeline}
+                </dd>
+              </div>
+            )}
+            {reqMeta.contractDuration && (
+              <div className="py-2 flex justify-between items-center gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">Contract period</dt>
+                <dd className="font-medium text-[var(--text-primary)] text-right">
+                  {reqMeta.contractDuration}
+                </dd>
+              </div>
+            )}
+            {reqMeta.travelRequirement && (
+              <div className="py-2 flex justify-between items-start gap-2">
+                <dt className="text-[12px] text-[var(--text-secondary)]">Travel / Work</dt>
+                <dd className="font-medium text-[var(--text-primary)] text-right max-w-[170px] leading-snug">
+                  {reqMeta.travelRequirement}
+                </dd>
+              </div>
+            )}
             {hasBgvRequired(req) && (
               <div className="py-2 flex justify-between items-center gap-2">
                 <dt className="text-[12px] text-[var(--text-secondary)]">BGV check</dt>

@@ -39,6 +39,9 @@ export interface RequirementExtendedMeta {
   hasBgv?: boolean | null;
   paymentTerms?: string | null;
   notes?: string | null;
+  joiningTimeline?: string | null;
+  contractDuration?: string | null;
+  travelRequirement?: string | null;
 }
 
 export interface RequirementExtras {
@@ -50,6 +53,9 @@ export interface RequirementExtras {
   hasBgv?: boolean | null;
   paymentTerms?: string | null;
   notes?: string | null;
+  joiningTimeline?: string | null;
+  contractDuration?: string | null;
+  travelRequirement?: string | null;
 }
 
 export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras {
@@ -62,6 +68,9 @@ export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras
     hasBgv: meta.hasBgv ?? null,
     paymentTerms: meta.paymentTerms ?? null,
     notes: meta.notes ?? null,
+    joiningTimeline: meta.joiningTimeline ?? null,
+    contractDuration: meta.contractDuration ?? null,
+    travelRequirement: meta.travelRequirement ?? null,
   };
 }
 
@@ -484,6 +493,15 @@ export function encodeRequirementMetaToCurrency(params: {
   if (params.notes && params.notes.trim() !== '') {
     encoded += `|reqnotes=${encodeURIComponent(params.notes.trim())}`;
   }
+  if (params.joiningTimeline && params.joiningTimeline.trim() !== '') {
+    encoded += `|join=${encodeURIComponent(params.joiningTimeline.trim())}`;
+  }
+  if (params.contractDuration && params.contractDuration.trim() !== '') {
+    encoded += `|duration=${encodeURIComponent(params.contractDuration.trim())}`;
+  }
+  if (params.travelRequirement && params.travelRequirement.trim() !== '') {
+    encoded += `|travel=${encodeURIComponent(params.travelRequirement.trim())}`;
+  }
   if (params.isDeleted) {
     const safeAt = encodeURIComponent(params.deletedAt || new Date().toISOString());
     const safeBy = encodeURIComponent(params.deletedBy || 'admin');
@@ -637,6 +655,33 @@ export function parseRequirementMeta(
     }
   }
 
+  let joiningTimeline: string | null = null;
+  if (kv.join) {
+    try {
+      joiningTimeline = decodeURIComponent(kv.join);
+    } catch {
+      joiningTimeline = kv.join;
+    }
+  }
+
+  let contractDuration: string | null = null;
+  if (kv.duration) {
+    try {
+      contractDuration = decodeURIComponent(kv.duration);
+    } catch {
+      contractDuration = kv.duration;
+    }
+  }
+
+  let travelRequirement: string | null = null;
+  if (kv.travel) {
+    try {
+      travelRequirement = decodeURIComponent(kv.travel);
+    } catch {
+      travelRequirement = kv.travel;
+    }
+  }
+
   const result: RequirementExtendedMeta = {
     baseCurrency,
     budgetUnit,
@@ -662,6 +707,9 @@ export function parseRequirementMeta(
           : null,
     paymentTerms,
     notes,
+    joiningTimeline,
+    contractDuration,
+    travelRequirement,
   };
 
   if (reqId) {

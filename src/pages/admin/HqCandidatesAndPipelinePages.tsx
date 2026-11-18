@@ -1521,17 +1521,17 @@ export const HqSubmissionsPage: React.FC = () => {
             <table>
               <thead>
                 <tr>
-                  <th>Candidate</th>
-                  <th>Requirement & client</th>
-                  <th>Source & vendor</th>
-                  <th>JD match & gaps</th>
-                  <th>Validation gate & rating</th>
-                  <th>
+                  <th className="min-w-[160px]">Candidate</th>
+                  <th className="min-w-[200px]">Requirement &amp; client</th>
+                  <th className="min-w-[130px]">Submission stage</th>
+                  <th className="min-w-[150px]">Source &amp; vendor</th>
+                  <th className="min-w-[140px]">JD match &amp; gaps</th>
+                  <th className="min-w-[160px]">Validation gate &amp; rating</th>
+                  <th className="min-w-[110px]">
                     <AiScoreHeader />
                   </th>
-                  <th>Follow-up</th>
-                  <th>Stage & compliance</th>
-                  <th>Submitted</th>
+                  <th className="min-w-[120px]">Follow-up</th>
+                  <th className="min-w-[120px]">Submitted</th>
                 </tr>
               </thead>
               <tbody>
@@ -1601,6 +1601,16 @@ export const HqSubmissionsPage: React.FC = () => {
                         </div>
                         <div className="text-[12px] leading-[16px] text-[var(--text-tertiary)]">
                           {sub.requirements?.organizations?.name || '-'}
+                        </div>
+                      </td>
+                      <td>
+                        <div className="flex flex-col items-start gap-1">
+                          <StageBadge stage={sub.stage} />
+                          {sub.is_valid ? (
+                            <Badge tone="emerald">Valid</Badge>
+                          ) : (
+                            <Badge tone="red">Invalid</Badge>
+                          )}
                         </div>
                       </td>
                       <td>
@@ -1686,16 +1696,6 @@ export const HqSubmissionsPage: React.FC = () => {
                         ) : (
                           <span className="text-[12px] text-[var(--text-tertiary)]">-</span>
                         )}
-                      </td>
-                      <td>
-                        <div className="flex flex-col items-start gap-1">
-                          <StageBadge stage={sub.stage} />
-                          {sub.is_valid ? (
-                            <Badge tone="emerald">Valid</Badge>
-                          ) : (
-                            <Badge tone="red">Invalid</Badge>
-                          )}
-                        </div>
                       </td>
                       <td className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
                         <div>{formatLocalDateTime(sub.created_at)}</div>

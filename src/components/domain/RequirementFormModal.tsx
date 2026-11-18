@@ -158,6 +158,15 @@ export const RequirementFormModal: React.FC<{
   const [importantNotesInput, setImportantNotesInput] = useState<string>(
     initialMeta.notes || ''
   );
+  const [joiningTimelineInput, setJoiningTimelineInput] = useState<string>(
+    initialMeta.joiningTimeline || ''
+  );
+  const [contractDurationInput, setContractDurationInput] = useState<string>(
+    initialMeta.contractDuration || ''
+  );
+  const [travelRequirementInput, setTravelRequirementInput] = useState<string>(
+    initialMeta.travelRequirement || ''
+  );
   const [currency, setCurrency] = useState<string>(initialMeta.baseCurrency || 'INR');
 
   const [fieldErrors, setFieldErrors] = useState< Partial<Record<string, string>> >({});
@@ -286,6 +295,9 @@ export const RequirementFormModal: React.FC<{
         : ''
     );
     setImportantNotesInput(parsed.notes || '');
+    setJoiningTimelineInput(parsed.joiningTimeline || '');
+    setContractDurationInput(parsed.contractDuration || '');
+    setTravelRequirementInput(parsed.travelRequirement || '');
     setCurrency(parsed.baseCurrency || 'INR');
     setFieldErrors({});
 
@@ -542,6 +554,9 @@ export const RequirementFormModal: React.FC<{
         hasBgv,
         paymentTerms: financialNotesInput.trim() || null,
         notes: importantNotesInput.trim() || null,
+        joiningTimeline: joiningTimelineInput.trim() || null,
+        contractDuration: contractDurationInput.trim() || null,
+        travelRequirement: travelRequirementInput.trim() || null,
         hourlyRate: null,
         workingDaysPerMonth:
           budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
@@ -1022,6 +1037,31 @@ export const RequirementFormModal: React.FC<{
               { value: 'contract_to_hire', label: 'Contract to hire' },
               { value: 'part_time', label: 'Part time' },
             ]}
+          />
+        </div>
+
+        {/* Joining timeline, Contract period & Travel requirements */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <Input
+            label="Joining timeline"
+            placeholder="e.g. Immediate, 15 days, 30 days"
+            value={joiningTimelineInput}
+            onChange={(e) => setJoiningTimelineInput(e.target.value)}
+            hint="Expected notice period or joining speed."
+          />
+          <Input
+            label="Contract period"
+            placeholder="e.g. 1+ year and long-term, 6 Months"
+            value={contractDurationInput}
+            onChange={(e) => setContractDurationInput(e.target.value)}
+            hint="Tenure / engagement duration."
+          />
+          <Input
+            label="Work / travel requirement"
+            placeholder="e.g. Mandatory 2–3 days travel to client office"
+            value={travelRequirementInput}
+            onChange={(e) => setTravelRequirementInput(e.target.value)}
+            hint="Client travel or in-office attendance rules."
           />
         </div>
         {/* Vendor Placement Fee & Commercial Margins — only for FTE requirements */}
