@@ -1243,9 +1243,17 @@ export async function updateRequirement(
 
   if (error) throw error;
 
-  // Patch vendor_charge_pct in returned data from the primary update
-  if (data && input.vendor_charge_pct !== undefined) {
-    (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
+  // Always use backend (service-role) to persist vendor_charge_pct,
+  // since the authenticated Postgres role may lack column-level UPDATE privilege.
+  if (input.vendor_charge_pct !== undefined) {
+    const backendResult = await updateRequirementViaBackend(id, {
+      vendor_charge_pct: input.vendor_charge_pct,
+    });
+    if (backendResult && data) {
+      (data as Requirement).vendor_charge_pct = backendResult.vendor_charge_pct;
+    } else if (data) {
+      (data as Requirement).vendor_charge_pct = input.vendor_charge_pct;
+    }
   }
 
   const updated = { ...(data as Requirement), currency: input.currency };
