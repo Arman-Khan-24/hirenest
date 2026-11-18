@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { usePersistedState } from '../../lib/usePersistedState';
 import { formatExperienceRange } from '../../lib/format';
 import { RequirementRibbon } from '../../components/domain/RequirementRibbon';
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, CheckCircle2, Layers, Trash2, Briefcase, Users, CalendarCheck, MessageCircle, Send, CheckCircle, Clock } from 'lucide-react';
 import {
@@ -1228,9 +1228,13 @@ export const ClientCandidatesReviewPage: React.FC = () => {
                         {sub.candidates?.total_experience_years ?? '-'} yrs
                       </span>{' '}
                       · Requirement:{' '}
-                      <span className="text-[var(--text-primary)] font-medium">
-                        {sub.requirements?.title}
-                      </span>
+                      <Link
+                        to={`/client/requirements/${sub.requirement_id}`}
+                        className="text-[var(--text-primary)] font-medium hover:text-[var(--accent)] hover:underline"
+                        title={`Open requirement details: ${sub.requirements?.title || sub.requirement_id}`}
+                      >
+                        {sub.requirements?.title || sub.requirement_id}
+                      </Link>
                     </p>
                   </div>
 

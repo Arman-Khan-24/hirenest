@@ -1364,6 +1364,8 @@ export const HqCandidateDetailPage: React.FC = () => {
 export const HqSubmissionsPage: React.FC = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const isAdmin = profile?.role === 'admin';
+  const prefix = isAdmin ? '/admin' : '/recruiter';
   const [searchParams] = useSearchParams();
   const [page, setPage] = useState(1);
   const [stage, setStage] = useState<SubmissionStage | ''>(
@@ -1562,16 +1564,40 @@ export const HqSubmissionsPage: React.FC = () => {
                       className="cursor-pointer"
                     >
                       <td>
-                        <div className="font-medium text-[var(--text-primary)]">
+                        <Link
+                          to={`${prefix}/candidates/${sub.candidate_id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-[var(--text-primary)] hover:text-[var(--accent)] hover:underline block"
+                          title={`Open candidate profile: ${sub.candidates?.full_name || sub.candidate_id}`}
+                        >
                           {sub.candidates?.full_name || sub.candidate_id}
-                        </div>
+                        </Link>
                         <div className="text-[12px] font-mono text-[var(--text-tertiary)]">
                           Resume {validation.resume_version_used}
                         </div>
                       </td>
                       <td>
-                        <div className="text-[var(--text-primary)] font-medium">
-                          {sub.requirements?.title || sub.requirement_id}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <Link
+                            to={`${prefix}/requirements/${sub.requirement_id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-[var(--text-primary)] font-medium hover:text-[var(--accent)] hover:underline"
+                            title={`Open requirement details: ${sub.requirements?.title || sub.requirement_id}`}
+                          >
+                            {sub.requirements?.title || sub.requirement_id}
+                          </Link>
+                          {(sub.requirements?.slug || sub.requirements?.id) && (
+                            <a
+                              href={`/jobs/${sub.requirements?.slug || sub.requirements?.id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-[var(--text-tertiary)] hover:text-[var(--accent)] p-0.5 rounded transition-colors inline-flex items-center"
+                              title="Open public job page in new tab"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </a>
+                          )}
                         </div>
                         <div className="text-[12px] leading-[16px] text-[var(--text-tertiary)]">
                           {sub.requirements?.organizations?.name || '-'}

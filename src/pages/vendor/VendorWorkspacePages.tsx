@@ -2212,7 +2212,14 @@ export const VendorCandidateDetailPage: React.FC = () => {
                       >
                         <td className="font-medium text-[var(--text-primary)]">
                           {sub.requirements && <RequirementRibbon requirement={sub.requirements} />}
-                          <div>{sub.requirements?.title || sub.requirement_id}</div>
+                          <Link
+                            to={`/vendor/requirements/${sub.requirement_id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="hover:text-[var(--accent)] hover:underline block truncate max-w-[320px]"
+                            title={`Open requirement details: ${sub.requirements?.title || sub.requirement_id}`}
+                          >
+                            {sub.requirements?.title || sub.requirement_id}
+                          </Link>
                         </td>
                         <td>
                           <StageBadge stage={sub.stage} />
@@ -2681,7 +2688,14 @@ export const VendorSubmissionsPage: React.FC = () => {
                         </div>
                       </td>
                       <td className="text-[var(--text-secondary)]">
-                        {sub.requirements?.title || sub.requirement_id}
+                        <Link
+                          to={`/vendor/requirements/${sub.requirement_id}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="hover:text-[var(--accent)] hover:underline block font-medium text-[var(--text-primary)] truncate max-w-[280px]"
+                          title={`Open requirement details: ${sub.requirements?.title || sub.requirement_id}`}
+                        >
+                          {sub.requirements?.title || sub.requirement_id}
+                        </Link>
                       </td>
                       <td>
                         <Badge tone={DECISION_GATE_TONES[validation.decision_gate]}>
