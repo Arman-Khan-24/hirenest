@@ -14,6 +14,10 @@ interface AuthContextValue {
   refreshProfile: () => Promise<void>;
   signOut: () => Promise<void>;
   homeRoute: string;
+  isImpersonating: boolean;
+  impersonatedOrg: Organization | null;
+  startImpersonating: (org: Organization) => void;
+  stopImpersonating: () => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -45,6 +49,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [loading, setLoading] = useState<boolean>(isSupabaseConfigured);
+
+  const [impersonatedOrg, setImpersonatedOrg] = useState<Organization | null>(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const raw = window.sessionStorage.getItem('hirenest_impersonated_org');
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  });
 
   const loadProfileAndOrg = useCallback(async (userId: string) => {
     try {
@@ -125,28 +139,72 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [session?.user?.id, loadProfileAndOrg]);
 
+  const startImpersonating = useCallback(
+    (targetOrg: Organization) => {
+      try {
+        window.sessionStorage.setItem('hirenest_impersonated_org', JSON.stringify(targetOrg));
+      } catch {
+        // ignore
+      }
+      setImpersonatedOrg(targetOrg);
+      queryClient.clear();
+    },
+    [queryClient]
+  );
+
+  const stopImpersonating = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem('hirenest_impersonated_org');
+    } catch {
+      // ignore
+    }
+    setImpersonatedOrg(null);
+    queryClient.clear();
+  }, [queryClient]);
+
   const signOut = useCallback(async () => {
+    stopImpersonating();
     queryClient.clear();
     await supabase.auth.signOut();
     setSession(null);
     setProfile(null);
     setOrganization(null);
-  }, [queryClient]);
+  }, [queryClient, stopImpersonating]);
 
-  const homeRoute = getHomeRouteForRole(profile?.role, profile?.status);
+  // If active user is Admin / Recruiter and impersonating an org:
+  const isActualHq = profile?.role === 'admin' || profile?.role === 'recruiter';
+  const isImpersonating = Boolean(impersonatedOrg && isActualHq);
+
+  const effectiveProfile: Profile | null = isImpersonating && profile && impersonatedOrg
+    ? {
+        ...profile,
+        role: impersonatedOrg.type === 'vendor' ? 'vendor_admin' : 'client_manager',
+        org_id: impersonatedOrg.id,
+      }
+    : profile;
+
+  const effectiveOrganization: Organization | null = isImpersonating && impersonatedOrg
+    ? impersonatedOrg
+    : organization;
+
+  const homeRoute = getHomeRouteForRole(effectiveProfile?.role, effectiveProfile?.status);
 
   return (
     <AuthContext.Provider
       value={{
         session,
         user: session?.user ?? null,
-        profile,
-        organization,
+        profile: effectiveProfile,
+        organization: effectiveOrganization,
         loading,
         isConfigured: isSupabaseConfigured,
         refreshProfile,
         signOut,
         homeRoute,
+        isImpersonating,
+        impersonatedOrg,
+        startImpersonating,
+        stopImpersonating,
       }}
     >
       {children}

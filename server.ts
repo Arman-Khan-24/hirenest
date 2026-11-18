@@ -3998,6 +3998,7 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     res.json({
       ok: true,
       records: enterpriseStore.submissionValidations || {},
+      validations: enterpriseStore.submissionValidations || {},
     });
   });
 
@@ -4007,6 +4008,7 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     res.json({
       ok: true,
       record,
+      validation: record,
     });
   });
 

@@ -724,6 +724,7 @@ export const AdminApprovalsPage: React.FC = () => {
 
 // 3. Admin Organizations Page
 export const AdminOrganizationsPage: React.FC = () => {
+  const { startImpersonating } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -925,9 +926,24 @@ export const AdminOrganizationsPage: React.FC = () => {
                       className="text-right"
                       onClick={(e) => e.stopPropagation()}
                     >
-                      <Button size="sm" variant="ghost" onClick={() => openModal(org)}>
-                        Edit
-                      </Button>
+                      <div className="flex items-center justify-end gap-1.5">
+                        {org.type === 'vendor' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              startImpersonating(org);
+                              navigate('/vendor');
+                            }}
+                            title={`Jump into workspace as ${org.name}`}
+                          >
+                            View as Vendor
+                          </Button>
+                        )}
+                        <Button size="sm" variant="ghost" onClick={() => openModal(org)}>
+                          Edit
+                        </Button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -1037,6 +1053,8 @@ export const AdminOrganizationsPage: React.FC = () => {
 // 4. Admin Organization Detail Page
 export const AdminOrganizationDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
+  const { startImpersonating } = useAuth();
+  const navigate = useNavigate();
 
   const { data: org, isLoading } = useQuery({
     queryKey: ['organization_detail', id],
@@ -1083,6 +1101,19 @@ export const AdminOrganizationDetailPage: React.FC = () => {
       <PageHeader
         title={org.name}
         description={`${org.type} organization · Status: ${org.status.replace('_', ' ')} · SLA tier: ${org.sla_tier}`}
+        actions={
+          org.type === 'vendor' ? (
+            <Button
+              onClick={() => {
+                startImpersonating(org);
+                navigate('/vendor');
+              }}
+              title={`Simulate and view workspace as ${org.name}`}
+            >
+              Jump into Workspace (View as Vendor)
+            </Button>
+          ) : undefined
+        }
       />
 
       {org.type !== 'internal' && <OrganizationOnboardingPanel orgId={org.id} isAdmin />}

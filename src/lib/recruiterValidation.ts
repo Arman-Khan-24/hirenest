@@ -6,8 +6,10 @@ import {
   recordValidationInterviewRpc,
   approveSubmissionRpc,
   requestClarificationRpc,
+  resolveClarificationRpc,
   transitionSubmissionRpc,
 } from '../api/submissions';
+import { supabase } from './supabase';
 
 export type SkillEvidenceStatus =
   | 'matched'
@@ -718,10 +720,11 @@ export async function fetchSubmissionValidationApi(
     const res = await fetch(`/api/submissions/validation/${encodeURIComponent(submission.id)}`);
     if (res.ok) {
       const json = await res.json();
-      if (json?.validation) {
+      const payload = json?.validation || json?.record;
+      if (payload) {
         const merged = buildSubmissionValidationRecord(
           submission,
-          json.validation as SubmissionValidationRecord
+          payload as SubmissionValidationRecord
         );
         localMap[submission.id] = merged;
         saveLocalValidationMap(localMap);
@@ -847,6 +850,32 @@ async function syncValidationToSupabase(
     });
   }
 
+  // 3b. If clarification was responded / recalculated, resolve any open DB clarification requests
+  if (
+    record.followUp?.status === 'recalculated' ||
+    record.followUp?.status === 'responded' ||
+    stage === 'approved_for_submission' ||
+    stage === 'recruiter_review'
+  ) {
+    try {
+      const { data: openClarifications } = await supabase
+        .from('submission_clarifications')
+        .select('id')
+        .eq('submission_id', submissionId)
+        .eq('status', 'open');
+      if (openClarifications && openClarifications.length > 0) {
+        for (const cl of openClarifications) {
+          await resolveClarificationRpc({
+            p_clarification_id: cl.id,
+            p_resolved: true,
+          }).catch(() => {});
+        }
+      }
+    } catch {
+      // Non-blocking
+    }
+  }
+
   // 4. Final approval - makes the DB gate open.
   if (stage === 'approved_for_submission') {
     await approveSubmissionRpc(submissionId);
@@ -873,8 +902,9 @@ export async function fetchAllValidationRecordsFromBackend(): Promise<
     const res = await fetch('/api/submissions/validation');
     if (res.ok) {
       const json = await res.json();
-      if (json?.validations && typeof json.validations === 'object') {
-        for (const [subId, val] of Object.entries(json.validations)) {
+      const recordsObj = json?.validations || json?.records;
+      if (recordsObj && typeof recordsObj === 'object') {
+        for (const [subId, val] of Object.entries(recordsObj)) {
           if (val && typeof val === 'object') {
             localMap[subId] = hydrateCompatFields(val as SubmissionValidationRecord);
           }

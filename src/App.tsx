@@ -234,6 +234,7 @@ function AppRoutes() {
         <Route path="candidates" element={<HqCandidatesListPage />} />
         <Route path="candidates/:id" element={<HqCandidateDetailPage />} />
         <Route path="submissions" element={<HqSubmissionsPage />} />
+        <Route path="submissions/:id" element={<HqSubmissionsPage />} />
         <Route path="interviews" element={<HqInterviewsPage />} />
         <Route path="offers" element={<OffersManagementPage />} />
         <Route path="onboarded" element={<OnboardedCandidatesPage />} />
@@ -271,6 +272,7 @@ function AppRoutes() {
         <Route path="candidates" element={<HqCandidatesListPage />} />
         <Route path="candidates/:id" element={<HqCandidateDetailPage />} />
         <Route path="submissions" element={<HqSubmissionsPage />} />
+        <Route path="submissions/:id" element={<HqSubmissionsPage />} />
         <Route path="interviews" element={<HqInterviewsPage />} />
         <Route path="offers" element={<OffersManagementPage />} />
         <Route path="onboarded" element={<OnboardedCandidatesPage />} />
@@ -325,6 +327,7 @@ function AppRoutes() {
         <Route path="candidates/:id" element={<VendorCandidateDetailPage />} />
         <Route path="matches" element={<VendorMatchIntelligencePage />} />
         <Route path="submissions" element={<VendorSubmissionsPage />} />
+        <Route path="submissions/:id" element={<VendorSubmissionsPage />} />
         <Route path="interviews" element={<VendorInterviewsPage />} />
         <Route path="offers" element={<OffersManagementPage />} />
         <Route path="onboarded" element={<OnboardedCandidatesPage />} />

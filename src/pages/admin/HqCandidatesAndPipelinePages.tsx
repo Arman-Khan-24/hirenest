@@ -1366,7 +1366,11 @@ export const HqSubmissionsPage: React.FC = () => {
   const navigate = useNavigate();
   const isAdmin = profile?.role === 'admin';
   const prefix = isAdmin ? '/admin' : '/recruiter';
+  const { id: urlSubId } = useParams<{ id?: string }>();
   const [searchParams] = useSearchParams();
+  const querySubId = searchParams.get('subId') || searchParams.get('submissionId');
+  const initialSubId = urlSubId || querySubId || null;
+
   const [page, setPage] = useState(1);
   const [stage, setStage] = useState<SubmissionStage | ''>(
     (searchParams.get('stage') as SubmissionStage) || ''
@@ -1374,7 +1378,13 @@ export const HqSubmissionsPage: React.FC = () => {
   const [source, setSource] = useState<CandidateSource | ''>('');
   const [validFilter, setValidFilter] = useState('');
   const [decisionGateFilter, setDecisionGateFilter] = useState<RecruiterDecisionGate | ''>('');
-  const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
+  const [drawerSubId, setDrawerSubId] = useState<string | null>(initialSubId);
+
+  React.useEffect(() => {
+    if (initialSubId) {
+      setDrawerSubId(initialSubId);
+    }
+  }, [initialSubId]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['submissions', page, stage, source, validFilter],

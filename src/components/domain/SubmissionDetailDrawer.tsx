@@ -111,8 +111,16 @@ export const SubmissionDetailDrawer: React.FC<{
   submissionId: string | null;
   onClose: () => void;
   role?: AppRole;
+  initialTab?:
+    | 'match_summary'
+    | 'validation_interview'
+    | 'ai_interview'
+    | 'screening'
+    | 'followup'
+    | 'decision_gate'
+    | 'pipeline_history';
   onUpdated?: () => void;
-}> = ({ submissionId, onClose, role: propRole, onUpdated }) => {
+}> = ({ submissionId, onClose, role: propRole, initialTab, onUpdated }) => {
   const { profile } = useAuth();
   const role: AppRole = propRole || profile?.role || 'recruiter';
   const { toast } = useToast();
@@ -215,13 +223,29 @@ export const SubmissionDetailDrawer: React.FC<{
     };
   }, [submission]);
 
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    } else if (
+      isVendor &&
+      (valRecord?.followUp?.status === 'requested' ||
+        valRecord?.followUp?.status === 'pending_vendor' ||
+        valRecord?.validationStage === 'hold_for_clarification')
+    ) {
+      setActiveTab('followup');
+    }
+  }, [initialTab, submissionId, isVendor, valRecord?.followUp?.status, valRecord?.validationStage]);
+
   const refreshAll = () => {
     queryClient.invalidateQueries({ queryKey: ['submission_detail', submissionId] });
     queryClient.invalidateQueries({ queryKey: ['submission_history', submissionId] });
     queryClient.invalidateQueries({ queryKey: ['submission_interviews', submissionId] });
     queryClient.invalidateQueries({ queryKey: ['submission_quality_feedback', submissionId] });
     queryClient.invalidateQueries({ queryKey: ['submissions'] });
+    queryClient.invalidateQueries({ queryKey: ['admin_submissions'] });
+    queryClient.invalidateQueries({ queryKey: ['vendor_submissions_list'] });
     queryClient.invalidateQueries({ queryKey: ['submission_validations_map'] });
+    queryClient.invalidateQueries({ queryKey: ['submission_validations_vendor'] });
     queryClient.invalidateQueries({ queryKey: ['offers-onboarding-workspace'] });
     queryClient.invalidateQueries({ queryKey: ['my_pending_feedback'] });
     onUpdated?.();
@@ -241,6 +265,11 @@ export const SubmissionDetailDrawer: React.FC<{
       });
       setValRecord(saved);
       queryClient.invalidateQueries({ queryKey: ['submission_validations_map'] });
+      queryClient.invalidateQueries({ queryKey: ['submission_validations_vendor'] });
+      queryClient.invalidateQueries({ queryKey: ['vendor_submissions_list'] });
+      queryClient.invalidateQueries({ queryKey: ['submissions'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_submissions'] });
+      refreshAll();
       if (toastTitle) {
         toast({ title: toastTitle, tone: 'success' });
       }

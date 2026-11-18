@@ -913,7 +913,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'matches' | 'submissions' | 'overview'>('matches');
+  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'submissions'>('overview');
   const [acking, setAcking] = useState(false);
   const [submitTarget, setSubmitTarget] = useState<CandidateMatch | null>(null);
   const [submitNotes, setSubmitNotes] = useState('');
@@ -1108,6 +1108,10 @@ export const VendorRequirementDetailPage: React.FC = () => {
           <Tabs
             tabs={[
               {
+                id: 'overview',
+                label: 'Specification',
+              },
+              {
                 id: 'matches',
                 label: 'Matching candidates',
                 count: matchesData?.count || 0,
@@ -1117,13 +1121,9 @@ export const VendorRequirementDetailPage: React.FC = () => {
                 label: 'Submissions',
                 count: mySubmissions.length,
               },
-              {
-                id: 'overview',
-                label: 'Specification',
-              },
             ]}
             activeTab={activeTab}
-            onChange={(t) => setActiveTab(t as 'matches' | 'submissions' | 'overview')}
+            onChange={(t) => setActiveTab(t as 'overview' | 'matches' | 'submissions')}
           />
 
           {activeTab === 'matches' && (
@@ -1793,7 +1793,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  const [activeTab, setActiveTab] = useState<'matches' | 'submissions' | 'overview'>('matches');
+  const [activeTab, setActiveTab] = useState<'overview' | 'matches' | 'submissions'>('overview');
   const [matchesPage, setMatchesPage] = useState(1);
   const [evidenceTarget, setEvidenceTarget] = useState<CandidateMatch | null>(null);
   const [scorecardTarget, setScorecardTarget] = useState<CandidateMatch | null>(null);
@@ -2616,9 +2616,24 @@ export const VendorCandidateDetailPage: React.FC = () => {
 // 6. Vendor Submissions Page
 export const VendorSubmissionsPage: React.FC = () => {
   const { profile } = useAuth();
+  const { id: urlSubId } = useParams<{ id?: string }>();
+  const [searchParams] = useSearchParams();
+  const querySubId = searchParams.get('subId') || searchParams.get('submissionId');
+  const initialSubId = urlSubId || querySubId || null;
+
   const [page, setPage] = useState(1);
   const [stage, setStage] = useState<SubmissionStage | ''>('');
-  const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
+  const [drawerSubId, setDrawerSubId] = useState<string | null>(initialSubId);
+  const [drawerInitialTab, setDrawerInitialTab] = useState<
+    'match_summary' | 'followup' | 'validation_interview' | 'pipeline_history' | undefined
+  >(initialSubId ? 'followup' : undefined);
+
+  React.useEffect(() => {
+    if (initialSubId) {
+      setDrawerSubId(initialSubId);
+      setDrawerInitialTab('followup');
+    }
+  }, [initialSubId]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['vendor_submissions_list', profile?.org_id, page, stage],
@@ -2746,9 +2761,18 @@ export const VendorSubmissionsPage: React.FC = () => {
                                     ? 'sky'
                                     : 'amber'
                               }
+                              className="cursor-pointer hover:opacity-85 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDrawerSubId(sub.id);
+                                setDrawerInitialTab(
+                                  latestFollowUp.status === 'requested' ? 'followup' : 'match_summary'
+                                );
+                              }}
+                              title="Click to view and respond to clarification request"
                             >
                               {latestFollowUp.status === 'requested'
-                                ? 'Clarification requested'
+                                ? '• Clarification requested'
                                 : latestFollowUp.status === 'responded'
                                   ? 'Response submitted'
                                   : 'Verified'}
@@ -2783,7 +2807,11 @@ export const VendorSubmissionsPage: React.FC = () => {
 
       <SubmissionDetailDrawer
         submissionId={drawerSubId}
-        onClose={() => setDrawerSubId(null)}
+        onClose={() => {
+          setDrawerSubId(null);
+          setDrawerInitialTab(undefined);
+        }}
+        initialTab={drawerInitialTab}
         role={profile?.role || 'vendor_recruiter'}
       />
     </div>
