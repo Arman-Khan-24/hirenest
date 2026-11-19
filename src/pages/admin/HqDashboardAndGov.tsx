@@ -82,7 +82,7 @@ import type {
 
 // 1. HQ Dashboard: Starts with "Needs attention" list -> 4-metric vertical-divider strip -> Breakdown lists
 export const HqDashboardPage: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, organization } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
