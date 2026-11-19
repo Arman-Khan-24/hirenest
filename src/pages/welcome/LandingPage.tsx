@@ -16,7 +16,6 @@ import {
   Database,
   Lock,
   History,
-  Sparkles,
 } from 'lucide-react';
 import {
   submitEarlyAccessApplication,
@@ -558,8 +557,7 @@ function VendorTrustSection() {
         {/* Header with Badges & Live Metrics */}
         <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12">
           <div>
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[12px] font-semibold tracking-wide uppercase mb-3 bg-[#EEF4FF] text-[#1D5FD1] border border-[#BFDBFE]">
-              <Sparkles className="h-3.5 w-3.5 text-[#1D5FD1]" />
+            <div className="inline-flex items-center px-3 py-1 rounded-full text-[12px] font-semibold tracking-wide uppercase mb-3 bg-[#EEF4FF] text-[#1D5FD1] border border-[#BFDBFE]">
               Network & Matching Powerhouse
             </div>
             <h2 className="type-display-lg !text-[clamp(28px,3.2vw,42px)]">
