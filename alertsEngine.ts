@@ -107,12 +107,17 @@ async function staffUsers(admin: SupabaseClient, roles: string[] = ['admin', 're
     if (u.email) map.set(u.email.toLowerCase().trim(), u);
   }
 
-  // Ensure both Gopal and Praveen (and admin) are always in staff recipients:
+  // Ensure Gopal, Praveen, official admin, and configured ADMIN_EMAIL are always in staff recipients:
   const mandatoryStaff = [
     { id: 'gopal_hq', email: 'gopal@hirenestworkforce.com' },
     { id: 'praveen_hq', email: 'praveen@hirenestworkforce.com' },
     { id: 'admin_hq', email: 'admin@hirenestworkforce.com' },
   ];
+
+  if (process.env.ADMIN_EMAIL?.trim()) {
+    const envEmail = process.env.ADMIN_EMAIL.trim();
+    mandatoryStaff.push({ id: 'admin_env', email: envEmail });
+  }
 
   for (const m of mandatoryStaff) {
     if (!map.has(m.email.toLowerCase())) {
