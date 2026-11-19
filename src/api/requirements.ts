@@ -1554,6 +1554,9 @@ export async function revokeRequirementShare(params: {
 export async function acknowledgeRequirement(params: {
   p_requirement_id: string;
   vendorOrgId?: string | null;
+  acknowledgedByUserId?: string | null;
+  acknowledgedByName?: string | null;
+  acknowledgedByEmail?: string | null;
 }): Promise<void> {
   const { error } = await supabase.rpc('acknowledge_requirement', {
     p_requirement_id: params.p_requirement_id,
@@ -1564,6 +1567,9 @@ export async function acknowledgeRequirement(params: {
     body: JSON.stringify({
       requirementId: params.p_requirement_id,
       vendorOrgId: params.vendorOrgId || undefined,
+      acknowledgedByUserId: params.acknowledgedByUserId || undefined,
+      acknowledgedByName: params.acknowledgedByName || undefined,
+      acknowledgedByEmail: params.acknowledgedByEmail || undefined,
     }),
   }).catch(() => undefined);
   if (error && !params.vendorOrgId) throw error;

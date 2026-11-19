@@ -759,6 +759,232 @@ export async function runNewSubmissionAlerts(admin: SupabaseClient): Promise<{ s
 }
 
 /**
+ * Triggered whenever a vendor acknowledges a shared requirement:
+ * 1. Creates in-app notifications for HQ admins & recruiters.
+ * 2. Sends live alert email from Gopal to gopal@hirenestworkforce.com, praveen, admin, and staffing team.
+ */
+export async function notifyRequirementAcknowledged(
+  admin: SupabaseClient,
+  requirementId: string,
+  vendorOrgId?: string,
+  acknowledgedByUserId?: string,
+  meta?: { acknowledgedByEmail?: string; acknowledgedByName?: string }
+): Promise<boolean> {
+  let resolvedVendorOrgId = vendorOrgId && vendorOrgId !== 'default_vendor' ? vendorOrgId : null;
+
+  // If vendorOrgId is unknown, try to find it from requirement_vendor_shares
+  if (!resolvedVendorOrgId) {
+    const { data: share } = await admin
+      .from('requirement_vendor_shares')
+      .select('vendor_org_id, acknowledged_by')
+      .eq('requirement_id', requirementId)
+      .not('acknowledged_at', 'is', null)
+      .order('acknowledged_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (share?.vendor_org_id) {
+      resolvedVendorOrgId = share.vendor_org_id;
+      if (!acknowledgedByUserId && share.acknowledged_by) {
+        acknowledgedByUserId = share.acknowledged_by;
+      }
+    }
+  }
+
+  const claimKey = `ack_req:${requirementId}:${resolvedVendorOrgId || 'general'}`;
+  if (!(await claim(admin, claimKey))) {
+    return true; // Already alerted
+  }
+
+  // Fetch requirement details
+  const { data: req, error: reqErr } = await admin
+    .from('requirements')
+    .select('id, title, client_org_id, role_type, location_city, experience_min, experience_max')
+    .eq('id', requirementId)
+    .maybeSingle();
+
+  if (reqErr || !req) {
+    console.error(`[notifyRequirementAcknowledged] Could not find requirement ${requirementId}:`, reqErr);
+    await admin.from('alert_log').delete().eq('dedupe_key', claimKey);
+    return false;
+  }
+
+  // Fetch vendor organization
+  let vendorName = 'Vendor Partner';
+  if (resolvedVendorOrgId) {
+    const { data: vOrg } = await admin
+      .from('organizations')
+      .select('name')
+      .eq('id', resolvedVendorOrgId)
+      .maybeSingle();
+    if (vOrg?.name) vendorName = vOrg.name;
+  }
+
+  // Fetch client organization
+  let clientName = 'HireNest Client';
+  if (req.client_org_id) {
+    const { data: cOrg } = await admin
+      .from('organizations')
+      .select('name')
+      .eq('id', req.client_org_id)
+      .maybeSingle();
+    if (cOrg?.name) clientName = cOrg.name;
+  }
+
+  // Fetch acknowledging user details if available
+  let ackUserName = meta?.acknowledgedByName?.trim() || '';
+  let ackUserEmail = meta?.acknowledgedByEmail?.trim() || '';
+  if ((!ackUserName || !ackUserEmail) && acknowledgedByUserId) {
+    const { data: prof } = await admin
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', acknowledgedByUserId)
+      .maybeSingle();
+    if (prof?.full_name && !ackUserName) ackUserName = prof.full_name;
+    if (prof?.email && !ackUserEmail) ackUserEmail = prof.email;
+  }
+
+  const ackTimeStr = new Date().toLocaleString('en-IN', {
+    timeZone: 'Asia/Kolkata',
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }) + ' IST';
+
+  // 1. In-app notifications to active HQ admins and recruiters
+  const staffList = await staffUsers(admin, ['admin', 'recruiter']);
+  const validDbStaff = staffList.filter((u) => u.id && u.id.length > 20 && !u.id.endsWith('_hq'));
+  if (validDbStaff.length > 0) {
+    try {
+      await admin.from('notifications').insert(
+        validDbStaff.map((u) => ({
+          user_id: u.id,
+          kind: 'requirement_acknowledged',
+          title: `Requirement Acknowledged: ${vendorName}`,
+          body: `${vendorName}${ackUserName ? ` (${ackUserName})` : ''} acknowledged "${req.title}". Sourcing SLA clock (2h) is active.`,
+          link: `/admin/requirements/${req.id}`,
+        }))
+      );
+    } catch (notifErr) {
+      console.warn('[notifyRequirementAcknowledged] Notification insert failed:', notifErr);
+    }
+  }
+
+  // 2. Build email alert
+  const subject = `Vendor Acknowledged: ${vendorName} on "${req.title}"`;
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+      <div style="border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 20px;">
+        <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #059669;">Requirement Acknowledged · SLA Clock Active</span>
+        <h2 style="color: #0f172a; margin: 6px 0 0; font-size: 20px;">${vendorName} has acknowledged your requirement</h2>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        <div style="display: inline-block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 6px 14px; border-radius: 9999px; font-weight: 700; font-size: 13px;">
+          ⏱️ 2-Hour Sourcing SLA Clock Running
+        </div>
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
+        <tbody>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600; width: 140px;">Requirement</td>
+            <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${req.title}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Client Account</td>
+            <td style="padding: 10px 0; color: #334155;">${clientName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Vendor Partner</td>
+            <td style="padding: 10px 0; color: #2563eb; font-weight: 600;">${vendorName}</td>
+          </tr>
+          ${ackUserName || ackUserEmail ? `
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Acknowledged By</td>
+            <td style="padding: 10px 0; color: #334155;">${ackUserName || 'Vendor Recruiter'}${ackUserEmail ? ` &lt;${ackUserEmail}&gt;` : ''}</td>
+          </tr>` : ''}
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Acknowledged At</td>
+            <td style="padding: 10px 0; color: #334155;">${ackTimeStr}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">SLA Window</td>
+            <td style="padding: 10px 0; color: #047857; font-weight: 600;">120 minutes (submission timing tracked on vendor scorecard)</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="background: #f8fafc; border-left: 3px solid #059669; padding: 12px 14px; border-radius: 4px; font-size: 13px; color: #334155; margin-bottom: 20px;">
+        <strong>Next Step:</strong> ${vendorName} has committed to sourcing for this position. Their submission timing and SLA compliance are being tracked automatically on the Vendor Performance leaderboard.
+      </div>
+
+      <div style="margin-top: 24px; text-align: left;">
+        <a href="${APP_URL()}/admin/requirements/${req.id}" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">Open Requirement in HireNest</a>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 16px;" />
+      <p style="font-size: 12px; color: #94a3b8; margin: 0;">
+        HireNest Workforce Private Limited · Notifications Dispatcher · Sourcing response from ${vendorName}
+      </p>
+    </div>
+  `;
+
+  // Recipients: HQ staff (Gopal, Praveen, Admin)
+  const recipients = await staffUsers(admin, ['admin', 'recruiter']);
+  const emails = Array.from(
+    new Set(recipients.map((u) => u.email?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))
+  );
+
+  // Guarantee gopal@hirenestworkforce.com is always included
+  if (!emails.includes('gopal@hirenestworkforce.com')) {
+    emails.push('gopal@hirenestworkforce.com');
+  }
+
+  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  if (!sendResult.ok) {
+    console.error(`[notifyRequirementAcknowledged] Email dispatch failed (${sendResult.channel}):`, sendResult.error);
+    await admin.from('alert_log').delete().eq('dedupe_key', claimKey);
+    return false;
+  }
+
+  console.log(`[notifyRequirementAcknowledged] Alert email dispatched to ${emails.join(', ')} for ${vendorName} on "${req.title}"`);
+  return true;
+}
+
+/**
+ * Sweep unnotified requirement acknowledgements from recent shares.
+ */
+export async function runRequirementAckAlerts(admin: SupabaseClient): Promise<{ sent: number }> {
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: shares } = await admin
+    .from('requirement_vendor_shares')
+    .select('requirement_id, vendor_org_id, acknowledged_at, acknowledged_by')
+    .not('acknowledged_at', 'is', null)
+    .gte('acknowledged_at', sevenDaysAgo)
+    .order('acknowledged_at', { ascending: false })
+    .limit(40);
+
+  let sent = 0;
+  for (const s of shares || []) {
+    if (!s.requirement_id || !s.vendor_org_id) continue;
+    const claimKey = `ack_req:${s.requirement_id}:${s.vendor_org_id}`;
+    const { count } = await admin
+      .from('alert_log')
+      .select('id', { count: 'exact', head: true })
+      .eq('dedupe_key', claimKey);
+    if ((count || 0) > 0) continue;
+
+    const ok = await notifyRequirementAcknowledged(
+      admin,
+      s.requirement_id,
+      s.vendor_org_id,
+      s.acknowledged_by
+    );
+    if (ok) sent++;
+  }
+  return { sent };
+}
+
+/**
  * Triggered when candidate matches are computed for an open requirement:
  * Sends SMTP email from gopal@hirenestworkforce.com to mapped vendors and admins.
  */

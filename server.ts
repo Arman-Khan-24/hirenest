@@ -37,6 +37,8 @@ import {
   notifyCandidateSubmitted,
   runNewSubmissionAlerts,
   notifyRequirementCandidateMatches,
+  notifyRequirementAcknowledged,
+  runRequirementAckAlerts,
 } from './alertsEngine';
 import { sendNotificationEmailViaSmtp } from './emailService';
 import {
@@ -2410,9 +2412,18 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
   });
 
   app.post('/api/requirements/acknowledge', (req, res) => {
-    const { requirementId, vendorOrgId } = req.body as {
+    const {
+      requirementId,
+      vendorOrgId,
+      acknowledgedByUserId,
+      acknowledgedByName,
+      acknowledgedByEmail,
+    } = req.body as {
       requirementId?: string;
       vendorOrgId?: string;
+      acknowledgedByUserId?: string;
+      acknowledgedByName?: string;
+      acknowledgedByEmail?: string;
     };
     if (!requirementId) {
       res.status(400).json({ error: 'requirementId is required.' });
@@ -2422,6 +2433,36 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     const nowIso = new Date().toISOString();
     enterpriseStore.vendorAcknowledgements[ackKey] = nowIso;
     saveEnterpriseStore(enterpriseStore);
+
+    const admin = getSupabaseAdmin();
+    if (admin) {
+      // Ensure DB record is also updated in case RPC wasn't executed
+      if (vendorOrgId && vendorOrgId !== 'default_vendor') {
+        admin
+          .from('requirement_vendor_shares')
+          .update({
+            acknowledged_at: nowIso,
+            ...(acknowledgedByUserId ? { acknowledged_by: acknowledgedByUserId } : {}),
+          })
+          .eq('requirement_id', requirementId)
+          .eq('vendor_org_id', vendorOrgId)
+          .is('acknowledged_at', null)
+          .then(() => undefined)
+          .catch(() => undefined);
+      }
+
+      // Trigger instant HQ in-app notification & alert email
+      void notifyRequirementAcknowledged(
+        admin,
+        requirementId,
+        vendorOrgId,
+        acknowledgedByUserId,
+        { acknowledgedByName, acknowledgedByEmail }
+      ).catch((e) => {
+        console.warn('[api/requirements/acknowledge] notify error:', e instanceof Error ? e.message : e);
+      });
+    }
+
     res.json({ ok: true, acknowledgedAt: nowIso });
   });
 
@@ -5326,6 +5367,7 @@ Return JSON array of objects with fields: targetSkill, question.`;
       if (job === 'morning' || job === 'all') out.morning = await runMorningDigest(admin);
       if (job === 'compliance' || job === 'all') out.compliance = await runComplianceAlerts(admin);
       if (job === 'submissions' || job === 'all') out.submissions = await runNewSubmissionAlerts(admin);
+      if (job === 'acknowledgements' || job === 'all') out.acknowledgements = await runRequirementAckAlerts(admin);
       if (job === 'matches' && typeof req.query.reqId === 'string') {
         out.matches = await notifyRequirementCandidateMatches(admin, req.query.reqId);
       }
@@ -5430,6 +5472,39 @@ Return JSON array of objects with fields: targetSkill, question.`;
     res.json({ ok: true, count: results.length, processed: results });
   });
 
+  // Re-evaluates recent requirement acknowledgements and dispatches alert emails
+  app.all('/api/admin/email/retry-recent-acknowledgements', async (req, res) => {
+    const caller = await authenticateStaffingCaller(req);
+    if (!caller.ok) {
+      res.status(caller.status).json({ error: caller.message });
+      return;
+    }
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      res.status(503).json({ error: 'DB unavailable' });
+      return;
+    }
+    const { data: recentShares } = await admin
+      .from('requirement_vendor_shares')
+      .select('requirement_id, vendor_org_id, acknowledged_at, acknowledged_by')
+      .not('acknowledged_at', 'is', null)
+      .order('acknowledged_at', { ascending: false })
+      .limit(5);
+
+    const results: Array<{ requirementId: string; vendorOrgId: string; sent: boolean }> = [];
+    for (const s of recentShares || []) {
+      await admin.from('alert_log').delete().eq('dedupe_key', `ack_req:${s.requirement_id}:${s.vendor_org_id}`);
+      const sent = await notifyRequirementAcknowledged(
+        admin,
+        s.requirement_id,
+        s.vendor_org_id,
+        s.acknowledged_by
+      );
+      results.push({ requirementId: s.requirement_id, vendorOrgId: s.vendor_org_id, sent });
+    }
+    res.json({ ok: true, count: results.length, processed: results });
+  });
+
   // User & Team Management (RBAC) — server-enforced
   // Safety net: requirements close when their SLA runs out even if the scheduled jobs are late.
   // Runs at most once every 5 minutes per server instance, on whichever API call arrives first.
@@ -5444,6 +5519,7 @@ Return JSON array of objects with fields: targetSkill, question.`;
           Promise.allSettled([
             runSlaAutoClose(admin).catch((e) => console.warn('[sla-close] sweep failed:', e instanceof Error ? e.message : e)),
             runNewSubmissionAlerts(admin).catch((e) => console.warn('[new-submission] sweep failed:', e instanceof Error ? e.message : e)),
+            runRequirementAckAlerts(admin).catch((e) => console.warn('[req-ack] sweep failed:', e instanceof Error ? e.message : e)),
           ]),
           new Promise((r) => setTimeout(r, 4000)),
         ]);

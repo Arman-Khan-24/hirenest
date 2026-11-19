@@ -974,6 +974,9 @@ export const VendorRequirementDetailPage: React.FC = () => {
       await acknowledgeRequirement({
         p_requirement_id: id,
         vendorOrgId: profile?.org_id,
+        acknowledgedByUserId: profile?.id,
+        acknowledgedByName: profile?.full_name,
+        acknowledgedByEmail: profile?.email,
       });
       toast({
         title: 'Requirement acknowledged',
