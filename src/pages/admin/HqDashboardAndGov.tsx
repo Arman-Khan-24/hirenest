@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Plus, RefreshCw, Building2, Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, AlertTriangle } from 'lucide-react';
+import { Plus, RefreshCw, Building2, Briefcase, Users, CalendarCheck, Send, CheckCircle, Clock, AlertTriangle, ShieldCheck, FileText, Check, X, Eye } from 'lucide-react';
 import {
   PageHeader,
   MetricStrip,
@@ -31,6 +31,15 @@ import {
 } from '../../components/ui/DashboardKit';
 import { VendorPerformancePanel } from '../../components/domain/VendorScoreCard';
 import { OrganizationOnboardingPanel } from '../../components/domain/OrganizationOnboardingPanel';
+import {
+  fetchAllComplianceDocuments,
+  reviewOrganizationDocument,
+  updateOrganizationNdaStatus,
+  createSignedDocumentUrl,
+  DOCUMENT_KIND_LABELS,
+  type OrganizationDocumentWithOrg,
+  type DocumentReviewStatus,
+} from '../../api/onboarding';
 import {
   fetchAdminDashboardSummary,
   fetchProfiles,
@@ -222,7 +231,9 @@ export const HqDashboardPage: React.FC = () => {
       {/* Header Band */}
       <div className="dashboard-header-band rounded-[12px] border border-[var(--border)] px-6 py-5 flex flex-wrap items-center justify-between gap-4">
         <GreetingHeader
-          firstName={profile?.full_name?.split(' ')[0]}
+          fullName={profile?.full_name}
+          organizationName={organization?.name || 'HireNest Workforce Private Limited'}
+          roleName={profile?.role === 'admin' ? 'HQ Admin' : 'Business Operations Manager'}
           subtitle="Governed overview across client requisitions, vendor SLAs, and pipeline stages."
         />
         <div className="flex flex-wrap items-center gap-2">
@@ -456,10 +467,11 @@ export const HqDashboardPage: React.FC = () => {
   );
 };
 
-// 2. Admin Approvals Page
+// 2. Admin Approvals Page (User Signups + Compliance & NDA Reviews)
 export const AdminApprovalsPage: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [activeTab, setActiveTab] = useState<'compliance' | 'users'>('compliance');
   const [page, setPage] = useState(1);
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null);
   const [assignRole, setAssignRole] = useState<AppRole>('vendor_admin');
@@ -469,15 +481,48 @@ export const AdminApprovalsPage: React.FC = () => {
   const [newOrgType, setNewOrgType] = useState<OrgType>('vendor');
   const [submitting, setSubmitting] = useState(false);
 
+  // Compliance state
+  const [compStatusFilter, setCompStatusFilter] = useState<'all' | 'pending_review' | 'approved' | 'rejected'>('all');
+  const [compSearch, setCompSearch] = useState('');
+  const [reviewingDoc, setReviewingDoc] = useState<OrganizationDocumentWithOrg | null>(null);
+  const [reviewDecision, setReviewDecision] = useState<'approved' | 'rejected' | 'more_info_requested'>('approved');
+  const [reviewNotes, setReviewNotes] = useState('');
+  const [reviewSaving, setReviewSaving] = useState(false);
+  const [openingDocId, setOpeningDocId] = useState<string | null>(null);
+
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['pending_profiles', page],
     queryFn: () => fetchProfiles({ page, status: 'pending_approval' }),
+  });
+
+  const { data: compDocs = [], isLoading: compLoading, refetch: refetchComp } = useQuery({
+    queryKey: ['admin_compliance_documents'],
+    queryFn: fetchAllComplianceDocuments,
   });
 
   const { data: orgsData } = useQuery({
     queryKey: ['organizations_all'],
     queryFn: () => fetchOrganizations({ page: 1, pageSize: 100 }),
   });
+
+  const pendingUsersCount = data?.count || data?.data.length || 0;
+  const pendingDocsCount = compDocs.filter((d) => d.status === 'pending_review').length;
+  const executedNdaCount = compDocs.filter((d) => d.kind === 'nda_executed').length;
+  const approvedDocsCount = compDocs.filter((d) => d.status === 'approved').length;
+
+  const filteredCompDocs = useMemo(() => {
+    return compDocs.filter((d) => {
+      if (compStatusFilter !== 'all' && d.status !== compStatusFilter) return false;
+      if (compSearch.trim()) {
+        const q = compSearch.trim().toLowerCase();
+        const orgName = (d.organizations?.name || '').toLowerCase();
+        const fileName = (d.original_name || '').toLowerCase();
+        const kindLabel = (DOCUMENT_KIND_LABELS[d.kind] || '').toLowerCase();
+        if (!orgName.includes(q) && !fileName.includes(q) && !kindLabel.includes(q)) return false;
+      }
+      return true;
+    });
+  }, [compDocs, compStatusFilter, compSearch]);
 
   const handleOpenApprove = (u: Profile) => {
     setSelectedUser(u);
@@ -563,72 +608,470 @@ export const AdminApprovalsPage: React.FC = () => {
     }
   };
 
+  // Compliance Document actions
+  const handleViewDoc = async (doc: OrganizationDocumentWithOrg) => {
+    if (!doc.storage_path) {
+      toast({ title: 'No storage path for this file.', tone: 'error' });
+      return;
+    }
+    setOpeningDocId(doc.id);
+    try {
+      const url = await createSignedDocumentUrl(doc.storage_path);
+      window.open(url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      toast({ title: 'Could not open document', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setOpeningDocId(null);
+    }
+  };
+
+  const handleDirectApproveDoc = async (doc: OrganizationDocumentWithOrg) => {
+    setReviewSaving(true);
+    try {
+      await reviewOrganizationDocument({
+        documentId: doc.id,
+        decision: 'approved',
+        notes: 'Approved by admin',
+      });
+      if (doc.kind === 'nda_executed') {
+        await updateOrganizationNdaStatus({
+          orgId: doc.org_id,
+          status: 'verified',
+          evidenceDocId: doc.id,
+          notes: 'Verified upon approving executed NDA document',
+        });
+      }
+      toast({
+        title: 'Document approved',
+        description: `${doc.organizations?.name || 'Organization'} is now approved and verified for protected collaboration.`,
+        tone: 'success',
+      });
+      queryClient.invalidateQueries({ queryKey: ['admin_compliance_documents'] });
+      queryClient.invalidateQueries({ queryKey: ['organization_onboarding', doc.org_id] });
+      queryClient.invalidateQueries({ queryKey: ['organizations_all'] });
+    } catch (err) {
+      toast({ title: 'Approval failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
+  const handleSubmitReviewDoc = async () => {
+    if (!reviewingDoc) return;
+    setReviewSaving(true);
+    try {
+      await reviewOrganizationDocument({
+        documentId: reviewingDoc.id,
+        decision: reviewDecision,
+        notes: reviewNotes || null,
+      });
+      if (reviewDecision === 'approved' && reviewingDoc.kind === 'nda_executed') {
+        await updateOrganizationNdaStatus({
+          orgId: reviewingDoc.org_id,
+          status: 'verified',
+          evidenceDocId: reviewingDoc.id,
+          notes: reviewNotes || 'Verified upon approving executed NDA document',
+        });
+      } else if (reviewDecision === 'rejected' && reviewingDoc.kind === 'nda_executed') {
+        await updateOrganizationNdaStatus({
+          orgId: reviewingDoc.org_id,
+          status: 'rejected',
+          evidenceDocId: reviewingDoc.id,
+          notes: reviewNotes || 'Rejected during review',
+        });
+      }
+      toast({
+        title: `Document ${reviewDecision.replace('_', ' ')}`,
+        tone: reviewDecision === 'approved' ? 'success' : 'info',
+      });
+      setReviewingDoc(null);
+      setReviewNotes('');
+      queryClient.invalidateQueries({ queryKey: ['admin_compliance_documents'] });
+      queryClient.invalidateQueries({ queryKey: ['organization_onboarding', reviewingDoc.org_id] });
+      queryClient.invalidateQueries({ queryKey: ['organizations_all'] });
+    } catch (err) {
+      toast({ title: 'Review recording failed', description: mapSupabaseError(err), tone: 'error' });
+    } finally {
+      setReviewSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
-        title="Approvals"
-        description="Verify company sign-ups, assign organizations, and activate role access."
+        title="Approvals & Compliance Review"
+        description="Verify vendor NDAs, legal documentation, and company user registrations."
       />
 
-      {isLoading ? (
-        <TableSkeleton rows={5} cols={5} />
-      ) : error ? (
-        <ErrorState message={mapSupabaseError(error)} onRetry={() => refetch()} />
-      ) : !data?.data.length ? (
-        <EmptyState
-          title="No pending sign-ups"
-          description="New vendor agency and hiring client registrations will appear here for verification."
-        />
-      ) : (
-        <div>
-          <div className="overflow-x-auto border-t border-[var(--border)]">
-            <table>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Email</th>
-                  <th>Intent</th>
-                  <th>Requested company</th>
-                  <th>Registered</th>
-                  <th className="text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.data.map((u) => (
-                  <tr key={u.id}>
-                    <td className="font-medium">{u.full_name}</td>
-                    <td className="font-mono text-[12px] text-[var(--text-secondary)]">
-                      {u.email}
-                    </td>
-                    <td>
-                      <Badge tone="amber">{u.requested_role || 'pending'}</Badge>
-                    </td>
-                    <td className="text-[var(--text-secondary)]">
-                      {u.requested_company || '-'}
-                    </td>
-                    <td className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
-                      {formatLocalDate(u.created_at)}
-                    </td>
-                    <td className="text-right space-x-1.5">
-                      <Button size="sm" onClick={() => handleOpenApprove(u)}>
-                        Approve
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="danger"
-                        onClick={() => handleRejectUser(u)}
-                      >
-                        Reject
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {/* Tabs Switcher */}
+      <div className="flex border-b border-[var(--border)] gap-6">
+        <button
+          type="button"
+          onClick={() => setActiveTab('compliance')}
+          className={`pb-3 text-[14px] font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'compliance'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <ShieldCheck className="w-4 h-4" />
+          Compliance &amp; NDA Reviews
+          {pendingDocsCount > 0 ? (
+            <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300">
+              {pendingDocsCount}
+            </span>
+          ) : (
+            <span className="px-2 py-0.5 text-[11px] font-medium rounded-full bg-[var(--bg-subtle)] text-[var(--text-tertiary)]">
+              {compDocs.length}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('users')}
+          className={`pb-3 text-[14px] font-medium flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+            activeTab === 'users'
+              ? 'border-blue-600 text-blue-600'
+              : 'border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+          }`}
+        >
+          <Users className="w-4 h-4" />
+          User Sign-ups
+          {pendingUsersCount > 0 && (
+            <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-300">
+              {pendingUsersCount}
+            </span>
+          )}
+        </button>
+      </div>
+
+      {/* ─── TAB 1: COMPLIANCE & NDA REVIEWS ──────────────────────────────── */}
+      {activeTab === 'compliance' && (
+        <div className="space-y-6">
+          {/* Summary Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="p-3.5 rounded-[8px] border border-amber-200 bg-amber-50/50">
+              <div className="text-[12px] font-medium text-amber-700">Pending Review</div>
+              <div className="text-[22px] font-bold text-amber-900 mt-1">{pendingDocsCount}</div>
+            </div>
+            <div className="p-3.5 rounded-[8px] border border-blue-200 bg-blue-50/50">
+              <div className="text-[12px] font-medium text-blue-700">Executed NDAs</div>
+              <div className="text-[22px] font-bold text-blue-900 mt-1">{executedNdaCount}</div>
+            </div>
+            <div className="p-3.5 rounded-[8px] border border-emerald-200 bg-emerald-50/50">
+              <div className="text-[12px] font-medium text-emerald-700">Approved &amp; Verified</div>
+              <div className="text-[22px] font-bold text-emerald-900 mt-1">{approvedDocsCount}</div>
+            </div>
+            <div className="p-3.5 rounded-[8px] border border-[var(--border)] bg-[var(--surface)]">
+              <div className="text-[12px] font-medium text-[var(--text-secondary)]">Total Documents</div>
+              <div className="text-[22px] font-bold text-[var(--text-primary)] mt-1">{compDocs.length}</div>
+            </div>
           </div>
-          <Pagination page={page} totalCount={data.count} onPageChange={setPage} />
+
+          {/* Filters Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant={compStatusFilter === 'all' ? 'primary' : 'outline'}
+                onClick={() => setCompStatusFilter('all')}
+              >
+                All ({compDocs.length})
+              </Button>
+              <Button
+                size="sm"
+                variant={compStatusFilter === 'pending_review' ? 'primary' : 'outline'}
+                onClick={() => setCompStatusFilter('pending_review')}
+              >
+                Pending Review ({pendingDocsCount})
+              </Button>
+              <Button
+                size="sm"
+                variant={compStatusFilter === 'approved' ? 'primary' : 'outline'}
+                onClick={() => setCompStatusFilter('approved')}
+              >
+                Approved ({approvedDocsCount})
+              </Button>
+              <Button
+                size="sm"
+                variant={compStatusFilter === 'rejected' ? 'primary' : 'outline'}
+                onClick={() => setCompStatusFilter('rejected')}
+              >
+                Rejected / More Info
+              </Button>
+            </div>
+            <div className="w-72">
+              <Input
+                placeholder="Search vendor or file name…"
+                value={compSearch}
+                onChange={(e) => setCompSearch(e.target.value)}
+              />
+            </div>
+          </div>
+
+          {compLoading ? (
+            <TableSkeleton rows={5} cols={6} />
+          ) : filteredCompDocs.length === 0 ? (
+            <EmptyState
+              title={compStatusFilter === 'pending_review' ? 'No pending documents' : 'No compliance documents found'}
+              description={
+                compStatusFilter === 'pending_review'
+                  ? 'All uploaded NDAs and compliance files have been reviewed.'
+                  : 'Documents uploaded by vendor agencies and clients will appear here.'
+              }
+            />
+          ) : (
+            <div className="overflow-x-auto border-t border-[var(--border)]">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Vendor / Organization</th>
+                    <th>Document Type</th>
+                    <th>Attached File</th>
+                    <th>Status</th>
+                    <th>Uploaded</th>
+                    <th>Notes</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredCompDocs.map((doc) => {
+                    const statusTone =
+                      doc.status === 'approved'
+                        ? 'success'
+                        : doc.status === 'pending_review'
+                        ? 'amber'
+                        : doc.status === 'rejected'
+                        ? 'danger'
+                        : 'info';
+                    const fileSizeKb = doc.size_bytes ? Math.round(doc.size_bytes / 1024) : null;
+                    return (
+                      <tr key={doc.id}>
+                        <td>
+                          <div className="font-medium text-[var(--text-primary)]">
+                            {doc.organizations?.name || 'Organization'}
+                          </div>
+                          <Badge tone="neutral" className="mt-0.5 text-[10px]">
+                            {doc.organizations?.type || 'vendor'}
+                          </Badge>
+                        </td>
+                        <td>
+                          <div className="font-medium text-[13px]">
+                            {DOCUMENT_KIND_LABELS[doc.kind] || doc.kind}
+                          </div>
+                          {doc.kind === 'nda_executed' && (
+                            <span className="text-[11px] text-blue-600 font-semibold">
+                              Protected Sourcing NDA
+                            </span>
+                          )}
+                        </td>
+                        <td>
+                          <div className="flex items-center gap-1.5 font-mono text-[12px] text-[var(--text-secondary)]">
+                            <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                            <span className="truncate max-w-[180px]">{doc.original_name || 'Document'}</span>
+                            {fileSizeKb && <span className="text-[11px] text-[var(--text-tertiary)]">({fileSizeKb} KB)</span>}
+                          </div>
+                        </td>
+                        <td>
+                          <Badge tone={statusTone}>
+                            {doc.status.replace('_', ' ')}
+                          </Badge>
+                        </td>
+                        <td className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
+                          {formatLocalDate(doc.uploaded_at)}
+                        </td>
+                        <td className="text-[12px] text-[var(--text-secondary)] max-w-[200px] truncate">
+                          {doc.review_notes || '—'}
+                        </td>
+                        <td className="text-right space-x-1.5 whitespace-nowrap">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => handleViewDoc(doc)}
+                            loading={openingDocId === doc.id}
+                          >
+                            <Eye className="w-3.5 h-3.5 mr-1" />
+                            View
+                          </Button>
+                          {doc.status === 'pending_review' && (
+                            <>
+                              <Button
+                                size="sm"
+                                onClick={() => handleDirectApproveDoc(doc)}
+                                loading={reviewSaving}
+                              >
+                                <Check className="w-3.5 h-3.5 mr-1" />
+                                Approve
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="danger"
+                                onClick={() => {
+                                  setReviewingDoc(doc);
+                                  setReviewDecision('rejected');
+                                  setReviewNotes('');
+                                }}
+                              >
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                          {doc.status !== 'pending_review' && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                setReviewingDoc(doc);
+                                setReviewDecision(doc.status === 'approved' ? 'rejected' : 'approved');
+                                setReviewNotes(doc.review_notes || '');
+                              }}
+                            >
+                              Edit review
+                            </Button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
+
+      {/* ─── TAB 2: USER SIGN-UPS ────────────────────────────────────────── */}
+      {activeTab === 'users' && (
+        <div className="space-y-4">
+          {isLoading ? (
+            <TableSkeleton rows={5} cols={5} />
+          ) : error ? (
+            <ErrorState message={mapSupabaseError(error)} onRetry={() => refetch()} />
+          ) : !data?.data.length ? (
+            <EmptyState
+              title="No pending sign-ups"
+              description="New vendor agency and hiring client registrations will appear here for verification."
+            />
+          ) : (
+            <div>
+              <div className="overflow-x-auto border-t border-[var(--border)]">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Name</th>
+                      <th>Email</th>
+                      <th>Intent</th>
+                      <th>Requested company</th>
+                      <th>Registered</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.data.map((u) => (
+                      <tr key={u.id}>
+                        <td className="font-medium">{u.full_name}</td>
+                        <td className="font-mono text-[12px] text-[var(--text-secondary)]">
+                          {u.email}
+                        </td>
+                        <td>
+                          <Badge tone="amber">{u.requested_role || 'pending'}</Badge>
+                        </td>
+                        <td className="text-[var(--text-secondary)]">
+                          {u.requested_company || '-'}
+                        </td>
+                        <td className="font-mono tabular-nums text-[12px] text-[var(--text-tertiary)]">
+                          {formatLocalDate(u.created_at)}
+                        </td>
+                        <td className="text-right space-x-1.5">
+                          <Button size="sm" onClick={() => handleOpenApprove(u)}>
+                            Approve
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="danger"
+                            onClick={() => handleRejectUser(u)}
+                          >
+                            Reject
+                          </Button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <Pagination page={page} totalCount={data.count} onPageChange={setPage} />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Review Document Dialog */}
+      <Dialog
+        open={Boolean(reviewingDoc)}
+        onClose={() => setReviewingDoc(null)}
+        title="Review Compliance Document"
+        description={
+          reviewingDoc
+            ? `${reviewingDoc.organizations?.name || 'Organization'} · ${DOCUMENT_KIND_LABELS[reviewingDoc.kind] || reviewingDoc.kind}`
+            : ''
+        }
+      >
+        <div className="space-y-4">
+          <div className="p-3 rounded-[6px] border border-[var(--border)] bg-[var(--bg-subtle)] space-y-1">
+            <div className="text-[13px] font-medium text-[var(--text-primary)]">
+              File: {reviewingDoc?.original_name || 'Document'}
+            </div>
+            <div className="text-[12px] text-[var(--text-tertiary)]">
+              Uploaded at {reviewingDoc ? formatLocalDate(reviewingDoc.uploaded_at) : '—'}
+            </div>
+            {reviewingDoc?.storage_path && (
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="mt-2"
+                onClick={() => reviewingDoc && handleViewDoc(reviewingDoc)}
+              >
+                <Eye className="w-3.5 h-3.5 mr-1" />
+                View document in new tab
+              </Button>
+            )}
+          </div>
+
+          <Select
+            label="Decision"
+            value={reviewDecision}
+            onChange={(e) => setReviewDecision(e.target.value as any)}
+            options={[
+              { value: 'approved', label: 'Approve (Verify organization)' },
+              { value: 'rejected', label: 'Reject' },
+              { value: 'more_info_requested', label: 'Request more information' },
+            ]}
+          />
+
+          <div>
+            <label className="block text-[12px] font-medium text-[var(--text-secondary)] mb-1">
+              Review Notes (visible in audit record)
+            </label>
+            <textarea
+              className="w-full rounded-[6px] border border-[var(--border)] bg-[var(--surface)] px-3 py-2 text-[13px] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-blue-500"
+              rows={3}
+              value={reviewNotes}
+              onChange={(e) => setReviewNotes(e.target.value)}
+              placeholder="e.g. Valid incorporation documents and signed authorized representative verified."
+            />
+          </div>
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setReviewingDoc(null)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSubmitReviewDoc} loading={reviewSaving}>
+              Submit review decision
+            </Button>
+          </div>
+        </div>
+      </Dialog>
 
       {/* Approve User Modal */}
       <Dialog

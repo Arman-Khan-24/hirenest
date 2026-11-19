@@ -43,7 +43,7 @@ import { useAuth } from '../../auth/AuthProvider';
 // ─── CEO Executive Command Centre ──────────────────────────────────────────
 
 export const CeoDashboardPage: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, organization } = useAuth();
   const navigate = useNavigate();
 
   const { data: summary } = useQuery({
@@ -134,7 +134,12 @@ export const CeoDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <GreetingHeader firstName={profile?.full_name?.split(' ')[0]} subtitle="Executive Command Centre" />
+      <GreetingHeader
+        fullName={profile?.full_name}
+        organizationName={organization?.name || 'HireNest Workforce Private Limited'}
+        roleName="Executive Leadership"
+        subtitle="Executive Command Centre · Governed overview across client requisitions, vendor SLAs, and pipeline stages."
+      />
       <SinceLastVisit items={sinceItems} />
 
       {/* KPI Cards */}
@@ -207,7 +212,7 @@ export const CeoDashboardPage: React.FC = () => {
 // ─── CFO Financial Command Centre ──────────────────────────────────────────
 
 export const CfoDashboardPage: React.FC = () => {
-  const { profile } = useAuth();
+  const { profile, organization } = useAuth();
   const navigate = useNavigate();
 
   const { data: summary } = useQuery({
@@ -244,7 +249,12 @@ export const CfoDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <GreetingHeader firstName={profile?.full_name?.split(' ')[0]} subtitle="Financial Command Centre" />
+      <GreetingHeader
+        fullName={profile?.full_name}
+        organizationName={organization?.name || 'HireNest Workforce Private Limited'}
+        roleName="Chief Financial Officer"
+        subtitle="Financial Command Centre · Real-time margins, collections, vendor payouts, and cash runway."
+      />
       <SinceLastVisit items={sinceItems} />
 
       {/* Operational overview — using live data */}

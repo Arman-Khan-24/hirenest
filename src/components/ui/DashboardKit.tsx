@@ -19,7 +19,7 @@ import { CATEGORY_PALETTE } from './kit';
 // ─── Time-based Greeting ─────────────────────────────────
 type GreetingInfo = { text: string; emoji: React.ReactNode };
 
-export function getTimeGreeting(firstName?: string): GreetingInfo {
+export function getTimeGreeting(name?: string, orgName?: string): GreetingInfo {
   const h = new Date().getHours();
   let text: string;
   let emoji: React.ReactNode;
@@ -33,23 +33,48 @@ export function getTimeGreeting(firstName?: string): GreetingInfo {
     text = 'Good evening';
     emoji = <Sunset className="w-6 h-6 text-orange-500 inline-block" />;
   } else {
-    text = 'Working late?';
+    text = 'Good evening';
     emoji = <Moon className="w-6 h-6 text-indigo-400 inline-block" />;
   }
-  if (firstName) text += `, ${firstName}`;
+  if (name) {
+    text += `, ${name}`;
+    if (orgName) {
+      text += ` · ${orgName}`;
+    }
+  }
   return { text, emoji };
 }
 
-export const GreetingHeader: React.FC<{ firstName?: string; subtitle: string }> = ({
+export const GreetingHeader: React.FC<{
+  firstName?: string;
+  fullName?: string;
+  organizationName?: string;
+  roleName?: string;
+  subtitle: string;
+}> = ({
   firstName,
+  fullName,
+  organizationName,
+  roleName,
   subtitle,
 }) => {
-  const { text, emoji } = useMemo(() => getTimeGreeting(firstName), [firstName]);
+  const displayName = fullName || firstName;
+  const { text, emoji } = useMemo(
+    () => getTimeGreeting(displayName, organizationName),
+    [displayName, organizationName]
+  );
   return (
     <div>
-      <h1 className="type-greeting text-[var(--text-primary)] flex items-center gap-2">
-        {emoji} {text}
-      </h1>
+      <div className="flex flex-wrap items-center gap-2.5">
+        <h1 className="type-greeting text-[var(--text-primary)] flex items-center gap-2">
+          {emoji} {text}
+        </h1>
+        {roleName && (
+          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold tracking-wide bg-blue-50 text-blue-700 border border-blue-200">
+            {roleName}
+          </span>
+        )}
+      </div>
       <p className="mt-1 text-[13px] leading-[20px] text-[var(--text-secondary)]">{subtitle}</p>
     </div>
   );

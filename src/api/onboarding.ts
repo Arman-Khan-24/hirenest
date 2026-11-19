@@ -92,6 +92,23 @@ export async function fetchAdminPendingDocuments(): Promise<OrganizationDocument
   return (data as OrganizationDocument[]) || [];
 }
 
+export interface OrganizationDocumentWithOrg extends OrganizationDocument {
+  organizations?: { id: string; name: string; type: string } | null;
+}
+
+export async function fetchAllComplianceDocuments(): Promise<OrganizationDocumentWithOrg[]> {
+  const { data, error } = await supabase
+    .from('organization_documents')
+    .select('*, organizations(id, name, type)')
+    .order('uploaded_at', { ascending: false });
+  if (error) {
+    console.warn('[fetchAllComplianceDocuments] fallback to RPC:', error.message);
+    const rpcDocs = await fetchAdminPendingDocuments();
+    return rpcDocs;
+  }
+  return (data as OrganizationDocumentWithOrg[]) || [];
+}
+
 export async function reviewOrganizationDocument(params: {
   documentId: string;
   decision: Exclude<DocumentReviewStatus, 'pending_review'>;

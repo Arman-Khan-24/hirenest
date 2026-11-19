@@ -242,7 +242,7 @@ export const REQUIREMENT_STATUS_LABELS: Record<RequirementStatus, string> = {
 
 export const ROLE_LABELS: Record<AppRole, string> = {
   admin: 'HQ admin',
-  recruiter: 'HQ recruiter',
+  recruiter: 'Business Operations Manager',
   client_manager: 'Client hiring manager',
   client_member: 'Client interview panel',
   vendor_admin: 'Vendor agency admin',

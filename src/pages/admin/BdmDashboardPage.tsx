@@ -9,6 +9,8 @@ import { staffApi } from '../../api/staff';
 import { formatRelativeTime, STAGE_LABELS } from '../../lib/format';
 import type { SubmissionStage } from '../../types/db';
 import { HqDashboardPage } from './HqDashboardAndGov';
+import { useAuth } from '../../auth/AuthProvider';
+import { GreetingHeader } from '../../components/ui/DashboardKit';
 
 /** BDM-focused home: clients, open demand per client and pipeline health. */
 const CLIENTS_PAGE_SIZE = 5;
@@ -21,6 +23,7 @@ const ACTIVE_STAGES: SubmissionStage[] = [
 ];
 
 const BdmDashboardPage: React.FC = () => {
+  const { profile, organization } = useAuth();
   const navigate = useNavigate();
   const [clientFilter, setClientFilter] = useState('');
   const [onlyNeedsReview, setOnlyNeedsReview] = useState(false);
@@ -142,7 +145,23 @@ const BdmDashboardPage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Business Development" description="Your clients, open demand and pipeline at a glance." />
+      <div className="dashboard-header-band rounded-[12px] border border-[var(--border)] px-6 py-5 flex flex-wrap items-center justify-between gap-4 bg-[var(--surface)]">
+        <GreetingHeader
+          fullName={profile?.full_name}
+          organizationName={organization?.name || 'HireNest Workforce Private Limited'}
+          roleName="Business Operations Manager"
+          subtitle="Your clients, open demand, financial calculations and pipeline at a glance."
+        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" variant="outline" onClick={exportClientsCsv}>
+            <Download className="h-3.5 w-3.5" />
+            Export clients CSV
+          </Button>
+          <Button size="sm" onClick={() => navigate('/admin/requirements')}>
+            View all requirements
+          </Button>
+        </div>
+      </div>
       {reqQ.isLoading ? (
         <TableSkeleton rows={4} cols={4} />
       ) : (

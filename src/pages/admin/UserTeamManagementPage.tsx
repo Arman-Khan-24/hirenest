@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   Badge,
   Button,
+  Dialog,
   ErrorState,
   Input,
   PageHeader,
@@ -13,6 +14,7 @@ import {
 import { useToast } from '../../components/ui/Toast';
 import { staffApi, type StaffUser, type RoleTemplate } from '../../api/staff';
 import {
+  DEFAULT_TEMPLATES,
   MODULE_LABEL,
   PERMISSION_ACTIONS,
   PERMISSION_MODULES,
@@ -26,6 +28,7 @@ import {
 
 const TABS = [
   { id: 'users', label: 'All Users' },
+  { id: 'team_access', label: 'Team Access Matrix' },
   { id: 'add', label: 'Add User' },
   { id: 'departments', label: 'Departments' },
   { id: 'roles', label: 'Roles & Permissions' },
@@ -39,6 +42,7 @@ const roleOptions = STAFF_ROLES.map((r) => ({ value: r, label: STAFF_ROLE_LABEL[
 
 export const UserTeamManagementPage: React.FC = () => {
   const [tab, setTab] = useState('users');
+  const [selectedAccessUser, setSelectedAccessUser] = useState<StaffUser | null>(null);
   const qc = useQueryClient();
   const { toast } = useToast();
 
@@ -52,6 +56,7 @@ export const UserTeamManagementPage: React.FC = () => {
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['staff_users'] });
     qc.invalidateQueries({ queryKey: ['staff_audit'] });
+    qc.invalidateQueries({ queryKey: ['my_access'] });
   };
   const onErr = (e: unknown) =>
     toast({ title: 'Action failed', description: e instanceof Error ? e.message : 'Error', tone: 'error' });
@@ -110,6 +115,15 @@ export const UserTeamManagementPage: React.FC = () => {
           depts={depts}
           allUsers={users}
           onUpdate={(id, body) => updateM.mutate({ id, body })}
+          onManageAccess={(u) => setSelectedAccessUser(u)}
+        />
+      )}
+
+      {!usersQ.isLoading && tab === 'team_access' && (
+        <TeamAccessMatrix
+          users={users.filter((u) => u.status !== 'suspended')}
+          deptName={deptName}
+          onManageAccess={(u) => setSelectedAccessUser(u)}
         />
       )}
 
@@ -138,6 +152,7 @@ export const UserTeamManagementPage: React.FC = () => {
           emptyText="No pending invitations."
           actionLabel="Resend invite"
           onAction={(u) => resendM.mutate(u.id)}
+          onManageAccess={(u) => setSelectedAccessUser(u)}
         />
       )}
 
@@ -153,6 +168,19 @@ export const UserTeamManagementPage: React.FC = () => {
       )}
 
       {tab === 'audit' && <AccessAudit users={users} />}
+
+      {/* User Access Modal */}
+      {selectedAccessUser && (
+        <UserAccessModal
+          user={selectedAccessUser}
+          deptName={deptName(selectedAccessUser.departmentId)}
+          onClose={() => setSelectedAccessUser(null)}
+          onSaved={() => {
+            refresh();
+            setSelectedAccessUser(null);
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -167,7 +195,8 @@ const UserTable: React.FC<{
   depts?: Array<{ id: string; name: string }>;
   allUsers?: StaffUser[];
   onUpdate?: (id: string, body: Record<string, unknown>) => void;
-}> = ({ users, deptName, userName, actionLabel, onAction, emptyText, depts, allUsers, onUpdate }) => {
+  onManageAccess?: (u: StaffUser) => void;
+}> = ({ users, deptName, userName, actionLabel, onAction, emptyText, depts, allUsers, onUpdate, onManageAccess }) => {
   if (users.length === 0) {
     return <p className="text-[13px] text-[var(--text-secondary)]">{emptyText || 'No users yet.'}</p>;
   }
@@ -176,7 +205,7 @@ const UserTable: React.FC<{
       <table className="w-full text-[13px]">
         <thead>
           <tr className="text-left text-[var(--text-tertiary)]">
-            {['Name', 'Role', 'Department', 'Designation', 'Reports to', 'Status', ''].map((h) => (
+            {['Name', 'Role', 'Department', 'Designation', 'Reports to', 'Status', 'Actions'].map((h) => (
               <th key={h} className="py-2 pr-4 font-medium">{h}</th>
             ))}
           </tr>
@@ -242,9 +271,16 @@ const UserTable: React.FC<{
                 </Badge>
               </td>
               <td className="py-2 text-right">
-                {actionLabel && onAction && (
-                  <Button size="sm" variant="outline" onClick={() => onAction(u)}>{actionLabel}</Button>
-                )}
+                <div className="flex items-center justify-end gap-1.5 whitespace-nowrap">
+                  {onManageAccess && (
+                    <Button size="sm" variant="secondary" onClick={() => onManageAccess(u)}>
+                      Manage Access
+                    </Button>
+                  )}
+                  {actionLabel && onAction && (
+                    <Button size="sm" variant="outline" onClick={() => onAction(u)}>{actionLabel}</Button>
+                  )}
+                </div>
               </td>
             </tr>
           ))}
@@ -456,5 +492,233 @@ const AccessAudit: React.FC<{ users: StaffUser[] }> = ({ users }) => {
         </tbody>
       </table>
     </div>
+  );
+};
+
+/** Team Access Matrix: Shows all team members side-by-side with their capability grants */
+const TeamAccessMatrix: React.FC<{
+  users: StaffUser[];
+  deptName: (id: string | null) => string;
+  onManageAccess: (u: StaffUser) => void;
+}> = ({ users, deptName, onManageAccess }) => {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[15px] font-semibold text-[var(--text-primary)]">
+            Team Access &amp; Capabilities Overview
+          </h2>
+          <p className="text-[12px] text-[var(--text-tertiary)]">
+            Review and adjust role grants, financials, and module scopes for every team member. Saved changes reflect immediately.
+          </p>
+        </div>
+      </div>
+
+      <div className="overflow-x-auto border-y border-[var(--border)]">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr className="text-left text-[var(--text-tertiary)] bg-[var(--bg-subtle)]">
+              <th className="py-2.5 px-3 font-semibold">Team Member</th>
+              <th className="py-2.5 px-2 font-semibold">Role &amp; Department</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Business Dev</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Clients / Vendors</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Requirements</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Candidates &amp; Subs</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Interviews</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Financials &amp; Terms</th>
+              <th className="py-2.5 px-2 font-semibold text-center">Reports</th>
+              <th className="py-2.5 px-3 font-semibold text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--border)]">
+            {users.map((u) => {
+              const template = DEFAULT_TEMPLATES[u.role] || DEFAULT_TEMPLATES.recruiter;
+              const hasFin = template.permissions.finance?.actions.length;
+              const hasBD = template.permissions.business_development?.actions.length;
+              const hasCV = template.permissions.clients_vendors?.actions.length;
+              const hasReq = template.permissions.requirements?.actions.length;
+              const hasCand = template.permissions.candidates?.actions.length;
+              const hasInt = template.permissions.interviews?.actions.length;
+              const hasRep = template.permissions.reports?.actions.length;
+
+              return (
+                <tr key={u.id} className="hover:bg-[var(--bg-hover)] transition-colors">
+                  <td className="py-2.5 px-3">
+                    <div className="font-semibold text-[var(--text-primary)]">{u.name || '—'}</div>
+                    <div className="text-[11px] text-[var(--text-tertiary)]">{u.email}</div>
+                  </td>
+                  <td className="py-2.5 px-2">
+                    <Badge tone={u.role === 'bdm' || u.role === 'senior_bom' ? 'info' : 'neutral'}>
+                      {STAFF_ROLE_LABEL[u.role]}
+                    </Badge>
+                    <div className="text-[11px] text-[var(--text-secondary)] mt-0.5">
+                      {deptName(u.departmentId)}
+                    </div>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasBD ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasBD ? '✓ Active' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasCV ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasCV ? '✓ Active' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasReq ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasReq ? '✓ Active' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasCand ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasCand ? '✓ Active' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasInt ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasInt ? '✓ Active' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasFin ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasFin ? '✓ Edit & View' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-center">
+                    <span className={hasRep ? 'text-emerald-600 font-bold' : 'text-slate-300'}>
+                      {hasRep ? '✓ Export' : '—'}
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-3 text-right">
+                    <Button size="sm" onClick={() => onManageAccess(u)}>
+                      Customize
+                    </Button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+/** User Access Modal: Manage per-user permissions with immediate reflection */
+const UserAccessModal: React.FC<{
+  user: StaffUser;
+  deptName: string;
+  onClose: () => void;
+  onSaved: () => void;
+}> = ({ user, deptName, onClose, onSaved }) => {
+  const { toast } = useToast();
+  const baseTpl = DEFAULT_TEMPLATES[user.role] || DEFAULT_TEMPLATES.recruiter;
+  const [draft, setDraft] = useState<PermissionSet>({ ...baseTpl.permissions });
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (mod: (typeof PERMISSION_MODULES)[number], action: (typeof PERMISSION_ACTIONS)[number]) => {
+    const cur = draft[mod] || { scope: 'organisation' as const, actions: [] };
+    const actions = cur.actions.includes(action)
+      ? cur.actions.filter((a) => a !== action)
+      : [...cur.actions, action];
+    setDraft({ ...draft, [mod]: { ...cur, actions } });
+  };
+
+  const setScope = (mod: (typeof PERMISSION_MODULES)[number], scope: (typeof RECORD_SCOPES)[number]) => {
+    const cur = draft[mod] || { scope: 'organisation' as const, actions: [] };
+    setDraft({ ...draft, [mod]: { ...cur, scope } });
+  };
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await staffApi.updateUser(user.id, { permissionOverrides: draft });
+      toast({
+        title: 'Access saved and reflected',
+        description: `Permissions for ${user.name || user.email} updated. Changes take effect immediately!`,
+        tone: 'success',
+      });
+      onSaved();
+    } catch (err) {
+      toast({
+        title: 'Could not save access',
+        description: err instanceof Error ? err.message : 'Update failed',
+        tone: 'error',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog
+      open={true}
+      onClose={onClose}
+      title={`Manage Access: ${user.name || user.email}`}
+      description={`${STAFF_ROLE_LABEL[user.role]} · Department: ${deptName}`}
+    >
+      <div className="space-y-4 max-h-[75vh] overflow-y-auto pr-1">
+        <div className="p-3 rounded-[6px] border border-emerald-200 bg-emerald-50/60 text-[12px] text-emerald-800 flex items-start gap-2">
+          <span className="font-bold text-[14px]">⚡</span>
+          <div>
+            <strong>Instant Reflection:</strong> Any changes saved here apply immediately to this employee's session across all modules, including financials, pipeline, and records.
+          </div>
+        </div>
+
+        <div className="overflow-x-auto border-y border-[var(--border)]">
+          <table className="w-full text-[12px]">
+            <thead>
+              <tr className="text-left text-[var(--text-tertiary)] bg-[var(--bg-subtle)]">
+                <th className="py-2 pr-3 font-medium">Module</th>
+                <th className="py-2 pr-3 font-medium">Scope</th>
+                {PERMISSION_ACTIONS.map((a) => (
+                  <th key={a} className="py-2 px-1 font-medium capitalize text-center">
+                    {a.replace('_', ' ')}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--border)]">
+              {PERMISSION_MODULES.map((mod) => (
+                <tr key={mod}>
+                  <td className="py-2 pr-3 font-medium">{MODULE_LABEL[mod]}</td>
+                  <td className="py-2 pr-3">
+                    <select
+                      className="bg-transparent border border-[var(--border)] rounded px-1 py-0.5 text-[11px]"
+                      value={draft[mod]?.scope || 'organisation'}
+                      onChange={(e) => setScope(mod, e.target.value as any)}
+                    >
+                      {RECORD_SCOPES.map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </td>
+                  {PERMISSION_ACTIONS.map((a) => (
+                    <td key={a} className="py-2 px-1 text-center">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(draft[mod]?.actions.includes(a))}
+                        onChange={() => toggle(mod, a)}
+                        className="rounded border-[var(--border)]"
+                      />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave} loading={saving}>
+            Save Access &amp; Reflect Immediately
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   );
 };
