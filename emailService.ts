@@ -115,7 +115,62 @@ export async function sendInviteEmailViaResend(params: {
 }
 
 /**
- * 2. SMTP SENDER - STRICTLY FOR ALL OPERATIONAL & CANDIDATE NOTIFICATIONS
+ * 2. RESEND NOTIFICATION FALLBACK - SENDS OPERATIONAL ALERTS IF SMTP IS OFFLINE
+ */
+export async function sendNotificationViaResend(params: {
+  to: string[];
+  subject: string;
+  html: string;
+  from?: string;
+  replyTo?: string;
+}): Promise<EmailSendResult> {
+  const key = process.env.RESEND_API_KEY;
+  if (!key) {
+    return {
+      ok: false,
+      channel: 'resend',
+      error: 'Neither SMTP nor RESEND_API_KEY is configured on the server',
+    };
+  }
+
+  const from =
+    process.env.RESEND_NOTIFY_FROM ||
+    process.env.RESEND_FROM_EMAIL ||
+    process.env.RESEND_INVITE_FROM ||
+    'HireNest <notifications@hirenestworkforce.com>';
+
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${key}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from,
+        to: params.to,
+        subject: params.subject,
+        html: params.html,
+        reply_to: params.replyTo,
+      }),
+    });
+
+    if (res.ok) {
+      const data = (await res.json().catch(() => ({}))) as { id?: string };
+      return { ok: true, channel: 'resend', messageId: data.id };
+    }
+
+    const bodyText = (await res.text()).slice(0, 300);
+    return { ok: false, channel: 'resend', error: `Resend error: ${bodyText}` };
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    return { ok: false, channel: 'resend', error: `Resend network error: ${msg}` };
+  }
+}
+
+/**
+ * 3. SMTP SENDER - STRICTLY FOR ALL OPERATIONAL & CANDIDATE NOTIFICATIONS
+ * (With automated Resend fallback if SMTP credentials or DNS are not yet ready)
  */
 export async function sendNotificationEmailViaSmtp(params: {
   to: string[];
@@ -145,15 +200,12 @@ export async function sendNotificationEmailViaSmtp(params: {
   const formattedFrom = `"${senderName}" <${senderAddress}>`;
   const transporter = getSmtpTransporter();
 
+  // If SMTP is not configured on the server, automatically fall back to Resend
   if (!transporter) {
     console.warn(
-      `[emailService:SMTP] SMTP is not configured. To send operational alerts from ${senderAddress}, configure SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS in environment.`
+      `[emailService:SMTP] SMTP not configured. Falling back to Resend for operational notification to: ${params.to.join(', ')}`
     );
-    return {
-      ok: false,
-      channel: 'smtp',
-      error: `SMTP not configured on server (attempted send from ${formattedFrom} to ${params.to.join(', ')})`,
-    };
+    return sendNotificationViaResend(params);
   }
 
   try {
@@ -172,11 +224,8 @@ export async function sendNotificationEmailViaSmtp(params: {
     };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error(`[emailService:SMTP] Failed to send via SMTP from ${formattedFrom}:`, msg);
-    return {
-      ok: false,
-      channel: 'smtp',
-      error: `SMTP error: ${msg}`,
-    };
+    console.warn(`[emailService:SMTP] SMTP send failed (${msg}). Falling back to Resend...`);
+    // Resilient fallback to Resend if SMTP fails (e.g. unverified DNS or temporary provider drop)
+    return sendNotificationViaResend(params);
   }
 }
