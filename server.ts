@@ -5325,6 +5325,7 @@ Return JSON array of objects with fields: targetSkill, question.`;
       if (job === 'sla' || job === 'reusable' || job === 'all') out.reusable = await runReusableCandidateAlerts(admin);
       if (job === 'morning' || job === 'all') out.morning = await runMorningDigest(admin);
       if (job === 'compliance' || job === 'all') out.compliance = await runComplianceAlerts(admin);
+      if (job === 'submissions' || job === 'all') out.submissions = await runNewSubmissionAlerts(admin);
       if (job === 'matches' && typeof req.query.reqId === 'string') {
         out.matches = await notifyRequirementCandidateMatches(admin, req.query.reqId);
       }
