@@ -129,7 +129,15 @@ export async function submitCandidateRpc(params: {
   }
   const { data, error } = await supabase.rpc('submit_candidate', params);
   if (error) throw error;
-  return data as SubmitCandidateResult;
+  const result = data as SubmitCandidateResult;
+  if (result && result.status === 'created' && result.submission_id) {
+    void fetch('/api/submissions/notify-submission', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: result.submission_id }),
+    }).catch((err) => console.warn('[notify-submission] error:', err));
+  }
+  return result;
 }
 
 export async function applyToRequirementRpc(
@@ -139,7 +147,15 @@ export async function applyToRequirementRpc(
     p_requirement_id: requirementId,
   });
   if (error) throw error;
-  return data as ApplyToRequirementResult;
+  const result = data as ApplyToRequirementResult;
+  if (result && result.status === 'created' && result.submission_id) {
+    void fetch('/api/submissions/notify-submission', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ submissionId: result.submission_id }),
+    }).catch((err) => console.warn('[notify-submission] error:', err));
+  }
+  return result;
 }
 
 export async function transitionSubmissionRpc(params: {

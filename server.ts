@@ -34,6 +34,8 @@ import {
   runMorningDigest,
   runComplianceAlerts,
   notifyCandidateSubmittedToClient,
+  notifyCandidateSubmitted,
+  runNewSubmissionAlerts,
   notifyRequirementCandidateMatches,
 } from './alertsEngine';
 import {
@@ -4084,6 +4086,26 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     });
   });
 
+  app.post('/api/submissions/notify-submission', async (req, res) => {
+    const { submissionId } = req.body || {};
+    if (!submissionId || typeof submissionId !== 'string') {
+      res.status(400).json({ ok: false, error: 'submissionId required' });
+      return;
+    }
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      res.status(503).json({ ok: false, error: 'Database unavailable' });
+      return;
+    }
+    try {
+      const sent = await notifyCandidateSubmitted(admin, submissionId);
+      res.json({ ok: true, sent });
+    } catch (err) {
+      console.error('[notify-submission] error:', err);
+      res.status(500).json({ ok: false, error: String(err) });
+    }
+  });
+
   app.post('/api/submissions/validation-questions', async (req, res) => {
     const {
       missingSkills = [],
@@ -5361,7 +5383,10 @@ Return JSON array of objects with fields: targetSkill, question.`;
       const admin = getSupabaseAdmin();
       if (admin) {
         await Promise.race([
-          runSlaAutoClose(admin).catch((e) => console.warn('[sla-close] sweep failed:', e instanceof Error ? e.message : e)),
+          Promise.allSettled([
+            runSlaAutoClose(admin).catch((e) => console.warn('[sla-close] sweep failed:', e instanceof Error ? e.message : e)),
+            runNewSubmissionAlerts(admin).catch((e) => console.warn('[new-submission] sweep failed:', e instanceof Error ? e.message : e)),
+          ]),
           new Promise((r) => setTimeout(r, 4000)),
         ]);
       }

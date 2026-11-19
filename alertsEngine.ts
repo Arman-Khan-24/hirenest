@@ -61,9 +61,13 @@ async function notifyUsers(
   // Insert in-app notifications for valid profile IDs
   const validDbUsers = users.filter((u) => u.id && u.id.length > 20 && !u.id.endsWith('_hq'));
   if (validDbUsers.length > 0) {
-    await admin.from('notifications').insert(
-      validDbUsers.map((u) => ({ user_id: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link }))
-    ).catch(() => {});
+    try {
+      await admin.from('notifications').insert(
+        validDbUsers.map((u) => ({ user_id: u.id, kind: n.kind, title: n.title, body: n.body, link: n.link }))
+      );
+    } catch {
+      // Ignore notification table errors
+    }
   }
 
   const emails = Array.from(
@@ -413,22 +417,76 @@ export async function runReusableCandidateAlerts(admin: SupabaseClient): Promise
 /**
  * Triggered on candidate submission to client:
  * Sends SMTP email from gopal@hirenestworkforce.com to client, vendor, and admin.
+ * Includes submitting vendor, target role, client account, and matching score.
  */
 export async function notifyCandidateSubmittedToClient(
   admin: SupabaseClient,
   submissionId: string
 ): Promise<void> {
+  if (!(await claim(admin, `sub_client:${submissionId}`))) {
+    return;
+  }
+
   const { data: sub } = await admin
     .from('submissions')
-    .select('id, candidate_id, requirement_id, vendor_org_id, candidates(full_name), requirements(title, client_org_id)')
+    .select(`
+      id,
+      candidate_id,
+      requirement_id,
+      vendor_org_id,
+      notes,
+      stage,
+      candidates:candidate_id(id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id),
+      requirements:requirement_id(id, title, client_org_id, location, work_mode, skills, organizations:client_org_id(id, name)),
+      vendor_org:vendor_org_id(id, name)
+    `)
     .eq('id', submissionId)
     .maybeSingle();
 
   if (!sub) return;
 
-  const candidateName = (sub.candidates as any)?.full_name || 'Candidate';
-  const reqTitle = (sub.requirements as any)?.title || 'Requirement';
-  const clientOrgId = (sub.requirements as any)?.client_org_id;
+  const candidate = (sub.candidates as any);
+  const requirement = (sub.requirements as any);
+  const candidateName = candidate?.full_name || 'Candidate';
+  const reqTitle = requirement?.title || 'Requirement';
+  const clientName = requirement?.organizations?.name || 'Client';
+  const clientOrgId = requirement?.client_org_id;
+
+  // Resolve vendor name
+  let vendorName = (sub.vendor_org as any)?.name;
+  if (!vendorName && candidate?.owner_vendor_org_id) {
+    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', candidate.owner_vendor_org_id).maybeSingle();
+    vendorName = vOrg?.name;
+  }
+  if (!vendorName) vendorName = 'HireNest Partner';
+
+  // Query matching score from candidate_matches
+  const { data: match } = await admin
+    .from('candidate_matches')
+    .select('final_score, computed_score, matched_skills')
+    .eq('requirement_id', sub.requirement_id)
+    .eq('candidate_id', sub.candidate_id)
+    .maybeSingle();
+
+  const matchScore = match?.final_score != null
+    ? Math.round(Number(match.final_score))
+    : match?.computed_score != null
+    ? Math.round(Number(match.computed_score))
+    : null;
+
+  const matchedSkills: string[] = Array.isArray(match?.matched_skills) && match.matched_skills.length > 0
+    ? match.matched_skills
+    : Array.isArray(candidate?.skills)
+    ? candidate.skills.slice(0, 8)
+    : [];
+
+  const skillsHtml = matchedSkills.length > 0
+    ? matchedSkills.map((s) => `<span style="display: inline-block; background: #e0f2fe; color: #0369a1; padding: 2px 7px; border-radius: 4px; font-size: 12px; margin: 2px 4px 2px 0; font-weight: 500;">${s}</span>`).join('')
+    : '<span style="font-size: 12px; color: #64748b;">Standard qualification criteria met</span>';
+
+  const scoreBadge = matchScore !== null
+    ? `<div style="display: inline-block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; padding: 5px 12px; border-radius: 9999px; font-weight: 700; font-size: 13px;">Match Score: ${matchScore}%</div>`
+    : `<div style="display: inline-block; background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 5px 12px; border-radius: 9999px; font-weight: 600; font-size: 13px;">Validated Profile</div>`;
 
   const recipients = await staffUsers(admin, ['admin', 'recruiter']);
   if (clientOrgId) {
@@ -440,17 +498,237 @@ export async function notifyCandidateSubmittedToClient(
     recipients.push(...vendorStaff);
   }
 
-  await notifyUsers(
-    admin,
-    recipients,
-    {
-      kind: 'candidate_submitted_to_client',
-      title: `Candidate Submitted to Client: ${candidateName} for ${reqTitle}`,
-      body: `${candidateName} has completed recruiter validation and has been submitted for client review on "${reqTitle}".`,
-      link: `/admin/submissions/${sub.id}`,
-    },
-    'gopal@hirenestworkforce.com'
+  const emails = Array.from(
+    new Set(recipients.map((u) => u.email?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))
   );
+  if (!emails.includes('gopal@hirenestworkforce.com')) {
+    emails.push('gopal@hirenestworkforce.com');
+  }
+
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+      <div style="border-bottom: 2px solid #059669; padding-bottom: 12px; margin-bottom: 20px;">
+        <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #059669;">Client Review Presentation</span>
+        <h2 style="color: #0f172a; margin: 6px 0 0; font-size: 20px;">Candidate Submitted to Client: ${candidateName}</h2>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        ${scoreBadge}
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
+        <tbody>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600; width: 140px;">Candidate</td>
+            <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${candidateName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Submitting Vendor</td>
+            <td style="padding: 10px 0; color: #2563eb; font-weight: 600;">${vendorName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Target Role</td>
+            <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${reqTitle}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Client Account</td>
+            <td style="padding: 10px 0; color: #334155;">${clientName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Validation Status</td>
+            <td style="padding: 10px 0; color: #059669; font-weight: 600;">Passed Recruiter Review & Screening</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600; vertical-align: top;">Key Competencies</td>
+            <td style="padding: 10px 0;">${skillsHtml}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <div style="margin-top: 24px;">
+        <a href="${APP_URL()}/admin/submissions?subId=${sub.id}" style="display: inline-block; padding: 12px 24px; background-color: #059669; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px;">Open Submission Dossier</a>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 16px;" />
+      <p style="font-size: 12px; color: #94a3b8; margin: 0;">HireNest Workforce Private Limited · Submitted by ${vendorName} for ${reqTitle}</p>
+    </div>
+  `;
+
+  const subject = `Candidate Submitted to Client: ${candidateName} (via ${vendorName}) for ${reqTitle}${matchScore !== null ? ` [${matchScore}% Match]` : ''}`;
+
+  await sendEmail(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+}
+
+/**
+ * Triggered whenever ANY candidate is submitted for a requirement (by a vendor or recruiter):
+ * Sends SMTP email from gopal@hirenestworkforce.com to admin (Gopal) with vendor name, role title, and matching score.
+ */
+export async function notifyCandidateSubmitted(
+  admin: SupabaseClient,
+  submissionId: string
+): Promise<boolean> {
+  // Idempotency: prevent sending twice for the same submission
+  if (!(await claim(admin, `sub_submitted:${submissionId}`))) {
+    return false;
+  }
+
+  const { data: sub, error } = await admin
+    .from('submissions')
+    .select(`
+      id,
+      candidate_id,
+      requirement_id,
+      vendor_org_id,
+      submitted_by,
+      notes,
+      stage,
+      created_at,
+      candidates:candidate_id(id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id),
+      requirements:requirement_id(id, title, client_org_id, location, work_mode, skills, organizations:client_org_id(id, name)),
+      vendor_org:vendor_org_id(id, name),
+      submitter:submitted_by(id, full_name, email)
+    `)
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (error || !sub) return false;
+
+  const candidate = (sub.candidates as any);
+  const requirement = (sub.requirements as any);
+  const candidateName = candidate?.full_name || 'Candidate';
+  const reqTitle = requirement?.title || 'Requirement';
+  const clientName = requirement?.organizations?.name || 'Client';
+
+  // Resolve vendor name
+  let vendorName = (sub.vendor_org as any)?.name;
+  if (!vendorName && candidate?.owner_vendor_org_id) {
+    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', candidate.owner_vendor_org_id).maybeSingle();
+    vendorName = vOrg?.name;
+  }
+  if (!vendorName) vendorName = (sub.submitter as any)?.full_name || 'Direct / Partner';
+
+  // Query matching score from candidate_matches
+  const { data: match } = await admin
+    .from('candidate_matches')
+    .select('final_score, computed_score, matched_skills')
+    .eq('requirement_id', sub.requirement_id)
+    .eq('candidate_id', sub.candidate_id)
+    .maybeSingle();
+
+  const matchScore = match?.final_score != null
+    ? Math.round(Number(match.final_score))
+    : match?.computed_score != null
+    ? Math.round(Number(match.computed_score))
+    : null;
+
+  const matchedSkills: string[] = Array.isArray(match?.matched_skills) && match.matched_skills.length > 0
+    ? match.matched_skills
+    : Array.isArray(candidate?.skills)
+    ? candidate.skills.slice(0, 8)
+    : [];
+
+  const expYears = candidate?.total_experience_years != null ? `${candidate.total_experience_years} years` : 'N/A';
+  const notesText = sub.notes
+    ? `<div style="margin: 16px 0; font-size: 13px; color: #334155; background: #f8fafc; padding: 12px; border-left: 3px solid #2563eb; border-radius: 4px;"><strong>Vendor Submission Notes:</strong><br/>${sub.notes}</div>`
+    : '';
+
+  const skillsHtml = matchedSkills.length > 0
+    ? matchedSkills.map((s) => `<span style="display: inline-block; background: #eff6ff; color: #1d4ed8; padding: 3px 8px; border-radius: 4px; font-size: 12px; margin: 2px 4px 2px 0; font-weight: 500;">${s}</span>`).join('')
+    : '<span style="font-size: 12px; color: #64748b;">Pending assessment</span>';
+
+  const matchBadge = matchScore !== null
+    ? `<div style="display: inline-block; background: ${matchScore >= 80 ? '#ecfdf5' : '#eff6ff'}; color: ${matchScore >= 80 ? '#047857' : '#1d4ed8'}; border: 1px solid ${matchScore >= 80 ? '#a7f3d0' : '#bfdbfe'}; padding: 6px 14px; border-radius: 9999px; font-weight: 700; font-size: 14px;">🎯 Match Score: ${matchScore}%</div>`
+    : `<div style="display: inline-block; background: #f1f5f9; color: #475569; padding: 6px 14px; border-radius: 9999px; font-weight: 600; font-size: 13px;">Match Evaluation Queued</div>`;
+
+  const emailHtml = `
+    <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #1e293b; max-width: 600px; padding: 24px; border: 1px solid #e2e8f0; border-radius: 10px; background-color: #ffffff;">
+      <div style="border-bottom: 2px solid #2563eb; padding-bottom: 12px; margin-bottom: 20px;">
+        <span style="font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: #2563eb;">Candidate Submission Alert</span>
+        <h2 style="color: #0f172a; margin: 6px 0 0; font-size: 20px;">New Profile Submitted: ${candidateName}</h2>
+      </div>
+
+      <div style="margin-bottom: 16px;">
+        ${matchBadge}
+      </div>
+
+      <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 14px;">
+        <tbody>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600; width: 140px;">Candidate</td>
+            <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${candidateName} <span style="font-size: 12px; color: #64748b; font-weight: normal;">(${expYears})</span></td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Submitting Vendor</td>
+            <td style="padding: 10px 0; color: #2563eb; font-weight: 600;">${vendorName}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Target Role</td>
+            <td style="padding: 10px 0; color: #0f172a; font-weight: 600;">${reqTitle}</td>
+          </tr>
+          <tr style="border-bottom: 1px solid #f1f5f9;">
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600;">Client Account</td>
+            <td style="padding: 10px 0; color: #334155;">${clientName}</td>
+          </tr>
+          <tr>
+            <td style="padding: 10px 0; color: #64748b; font-weight: 600; vertical-align: top;">Matched Skills</td>
+            <td style="padding: 10px 0;">${skillsHtml}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      ${notesText}
+
+      <div style="margin-top: 24px; text-align: left;">
+        <a href="${APP_URL()}/admin/submissions?subId=${sub.id}" style="display: inline-block; padding: 12px 24px; background-color: #2563eb; color: #ffffff; text-decoration: none; border-radius: 6px; font-weight: 600; font-size: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.05);">Review Submission & Validation Gate</a>
+      </div>
+
+      <hr style="border: none; border-top: 1px solid #e2e8f0; margin: 28px 0 16px;" />
+      <p style="font-size: 12px; color: #94a3b8; margin: 0;">
+        HireNest Workforce Private Limited · Notifications Dispatcher · Sourced by ${vendorName} for ${reqTitle}
+      </p>
+    </div>
+  `;
+
+  // Recipients: Gopal, Praveen, Admin + Internal Recruiters
+  const recipients = await staffUsers(admin, ['admin', 'recruiter']);
+
+  // Also send submission receipt to vendor staff
+  if (sub.vendor_org_id) {
+    const vendorStaff = await orgUsers(admin, sub.vendor_org_id);
+    recipients.push(...vendorStaff);
+  }
+
+  const emails = Array.from(
+    new Set(recipients.map((u) => u.email?.trim().toLowerCase()).filter((e): e is string => Boolean(e)))
+  );
+
+  // Guarantee gopal@hirenestworkforce.com is always included
+  if (!emails.includes('gopal@hirenestworkforce.com')) {
+    emails.push('gopal@hirenestworkforce.com');
+  }
+
+  const subject = `New Candidate Submission: ${candidateName} by ${vendorName} for ${reqTitle}${matchScore !== null ? ` (${matchScore}% Match)` : ''}`;
+
+  await sendEmail(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  return true;
+}
+
+/**
+ * Sweep unnotified recent submissions and send alert emails if pending.
+ */
+export async function runNewSubmissionAlerts(admin: SupabaseClient): Promise<{ sent: number }> {
+  const { data: recentSubs } = await admin
+    .from('submissions')
+    .select('id')
+    .order('created_at', { ascending: false })
+    .limit(30);
+
+  let sent = 0;
+  for (const s of recentSubs || []) {
+    const ok = await notifyCandidateSubmitted(admin, s.id);
+    if (ok) sent++;
+  }
+  return { sent };
 }
 
 /**
