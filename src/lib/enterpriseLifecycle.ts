@@ -43,6 +43,10 @@ export interface RequirementExtendedMeta {
   joiningTimeline?: string | null;
   contractDuration?: string | null;
   travelRequirement?: string | null;
+  // Unregistered client/vendor source (confidential to HQ Admin)
+  unregisteredSource?: string | null;
+  unregisteredSourceCode?: string | null;
+  unregisteredSourceContact?: string | null;
 }
 
 export interface RequirementExtras {
@@ -58,6 +62,9 @@ export interface RequirementExtras {
   joiningTimeline?: string | null;
   contractDuration?: string | null;
   travelRequirement?: string | null;
+  unregisteredSource?: string | null;
+  unregisteredSourceCode?: string | null;
+  unregisteredSourceContact?: string | null;
 }
 
 export function extrasFromMeta(meta: RequirementExtendedMeta): RequirementExtras {
@@ -508,6 +515,15 @@ export function encodeRequirementMetaToCurrency(params: {
   if (params.travelRequirement && params.travelRequirement.trim() !== '') {
     encoded += `|travel=${encodeURIComponent(params.travelRequirement.trim())}`;
   }
+  if (params.unregisteredSource && params.unregisteredSource.trim() !== '') {
+    encoded += `|unregsrc=${encodeURIComponent(params.unregisteredSource.trim())}`;
+  }
+  if (params.unregisteredSourceCode && params.unregisteredSourceCode.trim() !== '') {
+    encoded += `|unregcode=${encodeURIComponent(params.unregisteredSourceCode.trim())}`;
+  }
+  if (params.unregisteredSourceContact && params.unregisteredSourceContact.trim() !== '') {
+    encoded += `|unregcontact=${encodeURIComponent(params.unregisteredSourceContact.trim())}`;
+  }
   if (params.isDeleted) {
     const safeAt = encodeURIComponent(params.deletedAt || new Date().toISOString());
     const safeBy = encodeURIComponent(params.deletedBy || 'admin');
@@ -711,6 +727,33 @@ export function parseRequirementMeta(
     bgvChecks = ['Employment History Check', 'Police Clearance Certificate (PCC)'];
   }
 
+  let unregisteredSource: string | null = null;
+  if (kv.unregsrc) {
+    try {
+      unregisteredSource = decodeURIComponent(kv.unregsrc);
+    } catch {
+      unregisteredSource = kv.unregsrc;
+    }
+  }
+
+  let unregisteredSourceCode: string | null = null;
+  if (kv.unregcode) {
+    try {
+      unregisteredSourceCode = decodeURIComponent(kv.unregcode);
+    } catch {
+      unregisteredSourceCode = kv.unregcode;
+    }
+  }
+
+  let unregisteredSourceContact: string | null = null;
+  if (kv.unregcontact) {
+    try {
+      unregisteredSourceContact = decodeURIComponent(kv.unregcontact);
+    } catch {
+      unregisteredSourceContact = kv.unregcontact;
+    }
+  }
+
   const result: RequirementExtendedMeta = {
     baseCurrency,
     budgetUnit,
@@ -735,6 +778,9 @@ export function parseRequirementMeta(
     joiningTimeline,
     contractDuration,
     travelRequirement,
+    unregisteredSource,
+    unregisteredSourceCode,
+    unregisteredSourceContact,
   };
 
   if (reqId) {

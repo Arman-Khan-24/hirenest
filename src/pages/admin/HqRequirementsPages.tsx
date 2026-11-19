@@ -758,11 +758,29 @@ export const HqRequirementsListPage: React.FC = () => {
                       </td>
                       <td>
                         {budgetInfo.isClientMapped ? (
-                          <div className="flex items-center gap-1.5">
-                            <Badge tone="emerald">Mapped</Badge>
-                            <span className="text-[var(--text-secondary)] truncate">
-                              {req.organizations?.name || 'Client'}
-                            </span>
+                          <div className="flex flex-col gap-1">
+                            <div className="flex items-center gap-1.5">
+                              <Badge tone="emerald">Mapped</Badge>
+                              <span className="text-[var(--text-secondary)] truncate">
+                                {req.organizations?.name || 'Client'}
+                              </span>
+                            </div>
+                            {(() => {
+                              const rMeta = parseRequirementMeta(req);
+                              if (!rMeta.unregisteredSourceCode && !rMeta.unregisteredSource) return null;
+                              return (
+                                <div className="flex items-center gap-1 text-[11px]" title={`Confidential Originating Source: ${rMeta.unregisteredSource || 'External Partner'}`}>
+                                  <span className="inline-flex items-center px-1.5 py-0.2 rounded font-mono font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+                                    🔒 {rMeta.unregisteredSourceCode || 'POPUP CODE'}
+                                  </span>
+                                  {rMeta.unregisteredSource && (
+                                    <span className="text-[#78350F] truncate max-w-[130px]">
+                                      {rMeta.unregisteredSource}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </div>
                         ) : (
                           <div className="flex items-center gap-1.5">
@@ -1453,6 +1471,11 @@ export const HqRequirementDetailPage: React.FC = () => {
         description={
           <div className="flex flex-wrap items-center gap-2">
             <span>{req.organizations?.name || 'Client'} · {req.location || '—'} · {req.work_mode || '—'}</span>
+            {reqMeta.unregisteredSourceCode && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-mono font-bold bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]" title="Confidential Originating Source (HQ Admin only)">
+                🔒 Pop-up Code: {reqMeta.unregisteredSourceCode} ({reqMeta.unregisteredSource || 'External Partner'})
+              </span>
+            )}
             <select
               value={req.status}
               onChange={(e) => {
@@ -2419,6 +2442,33 @@ export const HqRequirementDetailPage: React.FC = () => {
                 <Badge tone="amber">Unmapped (Internal)</Badge>
               )}
             </div>
+            {(() => {
+              const rMeta = parseRequirementMeta(req);
+              if (!rMeta.unregisteredSourceCode && !rMeta.unregisteredSource) return null;
+              return (
+                <div className="py-2.5 px-3 my-2 rounded-[8px] border bg-[#FEF3C7]/50 border-[#FDE68A] space-y-1">
+                  <div className="flex items-center justify-between gap-1">
+                    <span className="text-[11px] font-bold text-[#92400E]">
+                      🔒 Confidential Source
+                    </span>
+                    <span className="font-mono text-[11px] font-bold px-1.5 py-0.5 rounded bg-[#FEF3C7] text-[#92400E] border border-[#FDE68A]">
+                      {rMeta.unregisteredSourceCode || 'CODE'}
+                    </span>
+                  </div>
+                  <div className="text-[12px] text-[#78350F]">
+                    <strong>Originating Partner:</strong> {rMeta.unregisteredSource || 'External Partner'}
+                  </div>
+                  {rMeta.unregisteredSourceContact && (
+                    <div className="text-[11px] text-[#92400E]">
+                      <strong>Contact:</strong> {rMeta.unregisteredSourceContact}
+                    </div>
+                  )}
+                  <div className="text-[10px] text-[#A16207] italic pt-0.5">
+                    Visible only to HQ Admin. Masked for vendors.
+                  </div>
+                </div>
+              );
+            })()}
             <div className="py-2 flex justify-between gap-2">
               <span className="text-[var(--text-secondary)]">Openings</span>
               <span className="font-mono tabular-nums text-[var(--text-primary)]">

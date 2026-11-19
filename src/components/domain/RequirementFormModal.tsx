@@ -230,6 +230,18 @@ export const RequirementFormModal: React.FC<{
     initialMargins?.margin_type || 'percentage'
   );
 
+  // Unregistered client / vendor source (confidential to HQ Admin / Gopal)
+  const [unregisteredSource, setUnregisteredSource] = useState<string>(
+    initialMeta.unregisteredSource || ''
+  );
+  const [unregisteredSourceCode, setUnregisteredSourceCode] = useState<string>(
+    initialMeta.unregisteredSourceCode || ''
+  );
+  const [unregisteredSourceContact, setUnregisteredSourceContact] = useState<string>(
+    initialMeta.unregisteredSourceContact || ''
+  );
+  const [showUnregisteredModal, setShowUnregisteredModal] = useState<boolean>(false);
+
   // Prevent re-initializing the form while the user is actively typing/clicking inside the open modal
   const initializedSessionRef = useRef<string | null>(null);
   const financialsTouchedRef = useRef<boolean>(false);
@@ -314,6 +326,10 @@ export const RequirementFormModal: React.FC<{
     setJoiningTimelineInput(parsed.joiningTimeline || '');
     setContractDurationInput(parsed.contractDuration || '');
     setTravelRequirementInput(parsed.travelRequirement || '');
+    setUnregisteredSource(parsed.unregisteredSource || '');
+    setUnregisteredSourceCode(parsed.unregisteredSourceCode || '');
+    setUnregisteredSourceContact(parsed.unregisteredSourceContact || '');
+    setShowUnregisteredModal(false);
     setCurrency(parsed.baseCurrency || 'INR');
     setFieldErrors({});
 
@@ -574,6 +590,9 @@ export const RequirementFormModal: React.FC<{
         joiningTimeline: joiningTimelineInput.trim() || null,
         contractDuration: contractDurationInput.trim() || null,
         travelRequirement: travelRequirementInput.trim() || null,
+        unregisteredSource: unregisteredSource.trim() || null,
+        unregisteredSourceCode: unregisteredSourceCode.trim() || null,
+        unregisteredSourceContact: unregisteredSourceContact.trim() || null,
         hourlyRate: null,
         workingDaysPerMonth:
           budgetUnit === 'HOURLY' && workingDaysInput.trim() !== '' && Number.isFinite(Number(workingDaysInput))
@@ -680,6 +699,7 @@ export const RequirementFormModal: React.FC<{
   };
 
   return (
+    <>
     <Dialog
       open={open}
       onClose={onClose}
@@ -742,19 +762,74 @@ export const RequirementFormModal: React.FC<{
             </div>
 
             {isClientMapped ? (
-              <Select
-                label="Mapped client organization"
-                value={clientOrgId}
-                onChange={(e) => {
-                  setClientOrgId(e.target.value);
-                  setClientMapError(null);
-                }}
-                error={clientMapError || fieldErrors.client_org_id}
-                options={[
-                  { value: '', label: 'Select client organization...' },
-                  ...clientOrgs.map((o) => ({ value: o.id, label: o.name })),
-                ]}
-              />
+              <div className="space-y-2">
+                <Select
+                  label="Mapped client organization"
+                  value={clientOrgId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setClientOrgId(val);
+                    setClientMapError(null);
+                    const selOrg = clientOrgs.find((o) => o.id === val);
+                    if (selOrg && /hirenest|hire nest/i.test(selOrg.name)) {
+                      setShowUnregisteredModal(true);
+                      if (!unregisteredSourceCode) {
+                        setUnregisteredSourceCode(`HN-SRC-${Math.floor(1000 + Math.random() * 9000)}`);
+                      }
+                    }
+                  }}
+                  error={clientMapError || fieldErrors.client_org_id}
+                  options={[
+                    { value: '', label: 'Select client organization...' },
+                    ...clientOrgs.map((o) => ({ value: o.id, label: o.name })),
+                  ]}
+                />
+
+                {/* Confidential Unregistered Vendor/Client Source & Pop-up Code (HQ Admin only) */}
+                {isHq && (
+                  <div>
+                    {unregisteredSourceCode || unregisteredSource ? (
+                      <div className="p-3 rounded-[8px] border bg-[#FEF3C7]/40 border-[#FDE68A] flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="inline-flex items-center gap-1 text-[11px] font-mono font-bold bg-[#FEF3C7] text-[#92400E] px-2 py-0.5 rounded border border-[#FDE68A]">
+                              🔒 {unregisteredSourceCode || 'POPUP CODE'}
+                            </span>
+                            <span className="text-[12px] font-semibold text-[#78350F] truncate">
+                              {unregisteredSource || 'Unregistered Partner'}
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-[#92400E] mt-0.5 truncate">
+                            Confidential Originating Source (Visible only to HQ Admin · Masked for vendors)
+                            {unregisteredSourceContact ? ` · ${unregisteredSourceContact}` : ''}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="secondary"
+                          onClick={() => setShowUnregisteredModal(true)}
+                        >
+                          Edit Code
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowUnregisteredModal(true);
+                          if (!unregisteredSourceCode) {
+                            setUnregisteredSourceCode(`HN-SRC-${Math.floor(1000 + Math.random() * 9000)}`);
+                          }
+                        }}
+                        className="text-[12px] font-medium text-[#1D5FD1] hover:underline inline-flex items-center gap-1 cursor-pointer"
+                      >
+                        + Tag Unregistered Vendor / Client Source & Pop-up Code (HQ Admin only)
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
               <p className="text-[12px] leading-[16px] text-[var(--text-secondary)]">
                 This requirement will not appear in client lists, search, counts, exports, or direct client links until an Admin explicitly maps it to a client.
@@ -1630,5 +1705,81 @@ export const RequirementFormModal: React.FC<{
         </div>
       </form>
     </Dialog>
+
+    {showUnregisteredModal && (
+      <Dialog
+        open={showUnregisteredModal}
+        onClose={() => setShowUnregisteredModal(false)}
+        title="Unregistered Client / Vendor Source & Pop-up Code"
+        description="Requirement managed under HireNest Workforce Private Limited on behalf of an offline or unregistered client/vendor. This information is confidential and visible ONLY to HQ Admin (Gopal)."
+      >
+        <div className="space-y-4 pt-2">
+          <Input
+            label="Originating Partner / Agency Name"
+            placeholder="e.g. Acme Tech Solutions / External Client"
+            value={unregisteredSource}
+            onChange={(e) => setUnregisteredSource(e.target.value)}
+          />
+
+          <div className="space-y-1">
+            <label className="block text-[12px] font-medium text-[var(--text-secondary)]">
+              Internal Pop-up Tracking Code
+            </label>
+            <div className="flex gap-2">
+              <input
+                type="text"
+                placeholder="e.g. HN-SRC-8349"
+                value={unregisteredSourceCode}
+                onChange={(e) => setUnregisteredSourceCode(e.target.value.toUpperCase())}
+                className="w-full h-9 px-3 rounded-[6px] border border-[var(--border)] bg-[var(--surface)] text-[13px] font-mono font-semibold text-[var(--text-primary)]"
+              />
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setUnregisteredSourceCode(`HN-SRC-${Math.floor(1000 + Math.random() * 9000)}`);
+                }}
+              >
+                Generate
+              </Button>
+            </div>
+            <p className="text-[11px] text-[var(--text-tertiary)]">
+              Unique tracking code shown only to HQ Admin (Gopal) to identify this requirement.
+            </p>
+          </div>
+
+          <Input
+            label="Contact Person & Phone / Email (Optional)"
+            placeholder="e.g. Rajesh Kumar (+91 98765 43210)"
+            value={unregisteredSourceContact}
+            onChange={(e) => setUnregisteredSourceContact(e.target.value)}
+          />
+
+          <div className="flex justify-between items-center pt-4 border-t border-[var(--border)]">
+            <button
+              type="button"
+              onClick={() => {
+                setUnregisteredSource('');
+                setUnregisteredSourceCode('');
+                setUnregisteredSourceContact('');
+                setShowUnregisteredModal(false);
+              }}
+              className="text-[12px] text-red-600 hover:underline cursor-pointer"
+            >
+              Clear / Remove Source
+            </button>
+            <Button
+              type="button"
+              variant="primary"
+              onClick={() => setShowUnregisteredModal(false)}
+            >
+              Save Source Code
+            </Button>
+          </div>
+        </div>
+      </Dialog>
+    )}
+    </>
   );
 };
