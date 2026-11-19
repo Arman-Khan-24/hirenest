@@ -38,6 +38,7 @@ import {
   runNewSubmissionAlerts,
   notifyRequirementCandidateMatches,
 } from './alertsEngine';
+import { sendNotificationEmailViaSmtp } from './emailService';
 import {
   type PrivacyNoticeRecord,
   type PrivacyAcknowledgementRecord,
@@ -5355,21 +5356,77 @@ Return JSON array of objects with fields: targetSkill, question.`;
       channels: {
         resend: {
           configured: hasResend,
-          purpose: 'Invites & User/Team Management ONLY',
-          sender: process.env.RESEND_INVITE_FROM || 'invites@hirenestworkforce.com',
+          purpose: 'Active Operational & Candidate Alert Mailer (via Verified Domain hirenestworkforce.com)',
+          sender: 'Gopal · HireNest <gopal@hirenestworkforce.com>',
         },
         smtp: {
           configured: hasSmtp,
-          purpose: 'Operational, Job Auto-Closed, Candidate Matching & Submission Alerts',
+          purpose: 'Direct SMTP Gateway (Auto-fallback to Resend active when false)',
           host: smtpHost,
           user: smtpUser,
           jobAutoCloseSender: 'gopal@hirenestworkforce.com',
           matchAlertsSender: 'gopal@hirenestworkforce.com',
           candidateSubmitSender: 'gopal@hirenestworkforce.com',
-          opsSender: 'admin@hirenestworkforce.com / praveen@hirenestworkforce.com',
+          opsSender: 'gopal@hirenestworkforce.com',
         },
       },
     });
+  });
+
+  // Diagnostic endpoint to send a live test notification to Gopal
+  app.all('/api/admin/email/test', async (req, res) => {
+    const caller = await authenticateStaffingCaller(req);
+    if (!caller.ok) {
+      res.status(caller.status).json({ error: caller.message });
+      return;
+    }
+    const to = (req.query.to as string) || (req.body?.to as string) || 'gopal@hirenestworkforce.com';
+    const result = await sendNotificationEmailViaSmtp({
+      to: [to],
+      subject: 'HireNest Live Email System Verification',
+      html: `
+        <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 24px; border: 1px solid #e2e8f0; border-radius: 8px; max-width: 550px;">
+          <h2 style="color: #0f172a; margin-top: 0;">HireNest Email Delivery Active</h2>
+          <p style="color: #334155; font-size: 14px;">This test confirms that your live email delivery system is functioning seamlessly via the verified domain <strong>hirenestworkforce.com</strong>.</p>
+          <div style="background: #f8fafc; padding: 12px; border-left: 3px solid #2563eb; border-radius: 4px; font-size: 13px; margin: 16px 0;">
+            <p style="margin: 4px 0;"><strong>Sender:</strong> Gopal · HireNest &lt;gopal@hirenestworkforce.com&gt;</p>
+            <p style="margin: 4px 0;"><strong>Recipient:</strong> ${to}</p>
+            <p style="margin: 4px 0;"><strong>Channel:</strong> ${process.env.RESEND_API_KEY ? 'Resend (Verified Domain)' : 'SMTP'}</p>
+            <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
+          </div>
+          <p style="font-size: 12px; color: #94a3b8; margin: 0;">HireNest Workforce Private Limited · Operational Delivery Test</p>
+        </div>
+      `,
+      from: 'gopal@hirenestworkforce.com',
+    });
+    res.json({ ok: result.ok, channel: result.channel, error: result.error, messageId: result.messageId, recipient: to });
+  });
+
+  // Re-evaluates recent candidate submissions and dispatches alert emails
+  app.all('/api/admin/email/retry-recent-submissions', async (req, res) => {
+    const caller = await authenticateStaffingCaller(req);
+    if (!caller.ok) {
+      res.status(caller.status).json({ error: caller.message });
+      return;
+    }
+    const admin = getSupabaseAdmin();
+    if (!admin) {
+      res.status(503).json({ error: 'DB unavailable' });
+      return;
+    }
+    const { data: recent } = await admin
+      .from('submissions')
+      .select('id, created_at')
+      .order('created_at', { ascending: false })
+      .limit(5);
+
+    const results: Array<{ id: string; sent: boolean }> = [];
+    for (const r of recent || []) {
+      await admin.from('alert_log').delete().eq('dedupe_key', `sub_submitted:${r.id}`);
+      const sent = await notifyCandidateSubmitted(admin, r.id);
+      results.push({ id: r.id, sent });
+    }
+    res.json({ ok: true, count: results.length, processed: results });
   });
 
   // User & Team Management (RBAC) — server-enforced
