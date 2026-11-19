@@ -1249,7 +1249,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
                           {sub.candidates?.full_name || sub.candidate_id}
                         </td>
                         <td>
-                          <StageBadge stage={sub.stage} />
+                          <StageBadge stage={sub.stage} vendorView />
                         </td>
                         <td className="font-mono tabular-nums text-[var(--text-secondary)]">
                           {formatLocalDateTime(sub.created_at)}
@@ -2148,7 +2148,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
                                 {m.requirements?.location || '-'} ({m.requirements?.work_mode || '-'})
                               </span>
                               {existingSub ? (
-                                <StageBadge stage={existingSub.stage} />
+                                <StageBadge stage={existingSub.stage} vendorView />
                               ) : (
                                 <span className="text-[12px] text-[var(--text-tertiary)]">
                                   Potential match
@@ -2271,7 +2271,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
                           </Link>
                         </td>
                         <td>
-                          <StageBadge stage={sub.stage} />
+                          <StageBadge stage={sub.stage} vendorView />
                         </td>
                         <td className="font-mono tabular-nums text-[var(--text-secondary)]">
                           {formatLocalDateTime(sub.created_at)}
@@ -2869,7 +2869,7 @@ export const VendorSubmissionsPage: React.FC = () => {
                         )}
                       </td>
                       <td>
-                        <StageBadge stage={sub.stage} />
+                        <StageBadge stage={sub.stage} vendorView />
                       </td>
                       <td>
                         {sub.is_valid ? (

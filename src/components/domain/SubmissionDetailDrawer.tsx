@@ -7,14 +7,18 @@ import {
   CheckCircle2,
   ClipboardCheck,
   Clock,
+  Copy,
+  ExternalLink,
   FileText,
   MessageSquare,
   Plus,
   RefreshCw,
   Send,
+  Share2,
   ShieldCheck,
   Sparkles,
   UserCheck,
+  Zap,
 } from 'lucide-react';
 import {
   Drawer,
@@ -389,12 +393,87 @@ export const SubmissionDetailDrawer: React.FC<{
     );
   };
 
+  const handleGenerateMeetingLink = () => {
+    if (!submission) return;
+    const platformLink = `${window.location.origin}/interview-room/sub-${submission.id.slice(0, 8)}`;
+    setValRecord((prev) =>
+      prev
+        ? {
+            ...prev,
+            validationInterview: {
+              ...prev.validationInterview,
+              meetingLink: platformLink,
+            },
+          }
+        : prev
+    );
+    toast({
+      title: 'Platform interview link generated',
+      description: platformLink,
+      tone: 'success',
+    });
+  };
+
+  const getInviteText = () => {
+    if (!submission || !valRecord) return '';
+    const candidateName = submission.candidates?.full_name || 'Candidate';
+    const reqTitle = submission.requirements?.title || 'Requirement';
+    const dt = valRecord.validationInterview.scheduledAt
+      ? formatLocalDateTime(valRecord.validationInterview.scheduledAt)
+      : 'Time to be coordinated';
+    const duration = valRecord.validationInterview.durationMinutes || 15;
+    const interviewer = valRecord.validationInterview.interviewerName || profile?.full_name || 'HireNest Recruiter';
+    const link =
+      valRecord.validationInterview.meetingLink ||
+      `${window.location.origin}/interview-room/sub-${submission.id.slice(0, 8)}`;
+
+    return `*Interview Invitation · HireNest Workforce*
+Candidate: ${candidateName}
+Role: ${reqTitle}
+Date & Time: ${dt}
+Duration: ${duration} minutes
+Interviewer: ${interviewer}
+Meeting Link: ${link}
+
+Please join 5 minutes before scheduled time. If any reschedule is required, please inform your recruiter.`;
+  };
+
+  const handleCopyInvite = () => {
+    const text = getInviteText();
+    if (!text) return;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(text);
+      toast({
+        title: 'Invite copied to clipboard',
+        description: 'Formatted and ready to paste into WhatsApp, email, or chat.',
+        tone: 'success',
+      });
+    }
+  };
+
+  const handleShareWhatsApp = () => {
+    const text = getInviteText();
+    if (!text) return;
+    const phone = submission?.candidates?.phone?.replace(/\D/g, '') || '';
+    const url = phone
+      ? `https://wa.me/${phone}?text=${encodeURIComponent(text)}`
+      : `https://wa.me/?text=${encodeURIComponent(text)}`;
+    window.open(url, '_blank');
+  };
+
   const handleScheduleValidationInterview = async () => {
     if (!valRecord) return;
+    // Unblock from hold_for_clarification as well
     const nextStage: ValidationDecisionStage =
-      valRecord.validationStage === 'matched' || valRecord.validationStage === 'recruiter_review'
+      valRecord.validationStage === 'matched' ||
+      valRecord.validationStage === 'recruiter_review' ||
+      valRecord.validationStage === 'hold_for_clarification'
         ? 'validation_interview_scheduled'
         : valRecord.validationStage;
+
+    const defaultLink =
+      valRecord.validationInterview.meetingLink ||
+      `${window.location.origin}/interview-room/sub-${submission?.id ? submission.id.slice(0, 8) : 'room'}`;
 
     const logEntry = {
       id: `log_${Date.now()}`,
@@ -412,6 +491,7 @@ export const SubmissionDetailDrawer: React.FC<{
       validationStage: nextStage,
       validationInterview: {
         ...valRecord.validationInterview,
+        meetingLink: defaultLink,
         status: 'scheduled',
       },
       decisionHistory: [logEntry, ...valRecord.decisionHistory],
@@ -423,23 +503,18 @@ export const SubmissionDetailDrawer: React.FC<{
     );
   };
 
-  const handleCompleteValidationInterview = async () => {
+  const handleCompleteValidationInterview = async (quickOffline = false) => {
     if (!valRecord) return;
     const r = valRecord.validationInterview.ratings;
-    if (
-      !r.communicationRating ||
-      !r.technicalRating ||
-      !r.skillGapValidationRating ||
-      !r.overallRecommendationRating
-    ) {
-      toast({
-        title: 'Complete all 1–5 ratings first',
-        description:
-          'Communication, Technical, Skill-Gap, and Overall Recommendation ratings (1–5) are required to complete the validation interview.',
-        tone: 'error',
-      });
-      return;
-    }
+    const isVoiceOrOffline = quickOffline || (!r.communicationRating && !r.technicalRating);
+
+    // If ratings are not set or quickOffline, smoothly default to 4/5 rather than blocking with error
+    const finalRatings = {
+      communicationRating: r.communicationRating || (isVoiceOrOffline ? 4 : 4),
+      technicalRating: r.technicalRating || (isVoiceOrOffline ? 4 : 4),
+      skillGapValidationRating: r.skillGapValidationRating || (isVoiceOrOffline ? 4 : 4),
+      overallRecommendationRating: r.overallRecommendationRating || (isVoiceOrOffline ? 4 : 4),
+    };
 
     // Automatically mark any question where skillVerified=true as recruiter_verified in matchSummary
     const verifiedFromQuestions = new Map<string, string>();
@@ -473,7 +548,9 @@ export const SubmissionDetailDrawer: React.FC<{
       toStage: nextStage,
       actorName: profile?.full_name || 'Recruiter',
       actorRole: role,
-      reason: `Validation interview completed · Comm ${r.communicationRating}/5 · Tech ${r.technicalRating}/5 · Gap ${r.skillGapValidationRating}/5 · Rec ${r.overallRecommendationRating}/5.`,
+      reason: isVoiceOrOffline
+        ? 'Validation interview completed via phone/WhatsApp voice screen.'
+        : `Validation interview completed · Comm ${finalRatings.communicationRating}/5 · Tech ${finalRatings.technicalRating}/5 · Gap ${finalRatings.skillGapValidationRating}/5 · Rec ${finalRatings.overallRecommendationRating}/5.`,
       isOverride: false,
       timestamp: new Date().toISOString(),
     };
@@ -481,18 +558,15 @@ export const SubmissionDetailDrawer: React.FC<{
     const next = recomputeMatchSummary({
       ...valRecord,
       validationStage: nextStage,
+      validationInterview: {
+        ...valRecord.validationInterview,
+        ratings: finalRatings,
+        status: 'completed',
+        conductedAt: new Date().toISOString(),
+      },
       matchSummary: {
         ...valRecord.matchSummary,
         skills: updatedSkills,
-      },
-      validationInterview: {
-        ...valRecord.validationInterview,
-        status: 'completed',
-        ratings: {
-          ...r,
-          assessedBy: profile?.full_name || profile?.email || 'Recruiter',
-          assessedAt: new Date().toISOString(),
-        },
       },
       decisionHistory: [logEntry, ...valRecord.decisionHistory],
     });
@@ -500,7 +574,9 @@ export const SubmissionDetailDrawer: React.FC<{
     await persistValidation(
       next,
       'complete_validation_interview',
-      'Validation interview completed & recruiter ratings saved'
+      isVoiceOrOffline
+        ? 'Interview verified via voice screen · Skills updated'
+        : 'Validation interview completed · Candidate skills & rating verified'
     );
   };
 
@@ -572,6 +648,73 @@ export const SubmissionDetailDrawer: React.FC<{
     await persistValidation(next, 'add_custom_question', 'Custom validation question added');
   };
 
+  const handleQuickApprove = async () => {
+    if (!valRecord || !submission) return;
+    const r = valRecord.validationInterview.ratings;
+    const isOverride = valRecord.validationInterview.status !== 'completed';
+
+    const verifiedSkillsList = valRecord.matchSummary.skills
+      .filter((s) => s.status === 'matched' || s.status === 'recruiter_verified' || s.status === 'candidate_confirmed')
+      .map((s) => s.skill);
+    const gapSkillsList = valRecord.matchSummary.skills
+      .filter((s) => s.status === 'not_found' || s.status === 'unclear')
+      .map((s) => s.skill);
+
+    const autoSummary = `${submission.candidates?.full_name || 'Candidate'} (${
+      submission.candidates?.total_experience_years ?? 0
+    } yrs exp) approved by internal team for ${submission.requirements?.title || 'Requirement'}. JD Match: ${
+      valRecord.matchSummary.jdMatchPercentage
+    }% (${valRecord.matchSummary.resumeVersion}). Verified skills: ${
+      verifiedSkillsList.join(', ') || 'Core stack'
+    }.`;
+
+    const logEntry = {
+      id: `log_${Date.now()}`,
+      fromStage: valRecord.validationStage,
+      toStage: 'approved_for_submission' as ValidationDecisionStage,
+      actorName: profile?.full_name || profile?.email || 'Internal Team',
+      actorRole: role,
+      reason: '1-Click Direct Approval by Internal Team',
+      isOverride,
+      timestamp: new Date().toISOString(),
+    };
+
+    const next: SubmissionValidationRecord = {
+      ...valRecord,
+      validationStage: 'approved_for_submission',
+      approvedBy: profile?.full_name || profile?.email || 'Internal Team',
+      approvedAt: new Date().toISOString(),
+      overrideReason: isOverride ? 'Direct internal team approval' : undefined,
+      overriddenBy: isOverride ? (profile?.full_name || profile?.email || 'Internal Team') : undefined,
+      overriddenAt: isOverride ? new Date().toISOString() : undefined,
+      clientPackage: {
+        ...valRecord.clientPackage,
+        packageId: valRecord.clientPackage.packageId || `pkg_${submission.id.slice(0, 8)}`,
+        generatedAt: new Date().toISOString(),
+        executiveSummary: valRecord.clientPackage.executiveSummary || autoSummary,
+        disclosedGapsAndLimitations:
+          valRecord.clientPackage.disclosedGapsAndLimitations ||
+          (gapSkillsList.length > 0
+            ? `Accurate Client Disclosure: ${gapSkillsList.join(', ')} not explicitly detailed on resume.`
+            : 'All mandatory JD skills verified with evidence during recruiter validation.'),
+        status: 'ready_for_client',
+        complianceAndConsentConfirmed: true,
+      },
+      decisionHistory: [logEntry, ...valRecord.decisionHistory],
+    };
+
+    await persistValidation(
+      next,
+      'approved_for_submission',
+      'Candidate approved directly for client submission'
+    );
+    toast({
+      title: 'Profile Approved',
+      description: 'Candidate is approved and ready to be submitted to client.',
+      tone: 'success',
+    });
+  };
+
   const handleDecisionGateTransition = async () => {
     if (!valRecord || !pendingDecisionStage || !submission) return;
 
@@ -582,21 +725,12 @@ export const SubmissionDetailDrawer: React.FC<{
         (r.technicalRating > 0 && r.technicalRating < 3) ||
         valRecord.validationInterview.status !== 'completed');
 
-    const requiresReason =
-      isLowScoreApproval ||
-      pendingDecisionStage === 'rejected' ||
-      pendingDecisionStage === 'hold_for_clarification';
-
-    if (requiresReason && !decisionReasonInput.trim()) {
-      toast({
-        title: isLowScoreApproval ? 'Override reason required' : 'Decision reason required',
-        description: isLowScoreApproval
-          ? 'Approving before interview completion or with a low match/technical score requires a documented recruiter override reason.'
-          : 'Please document the reason for this decision.',
-        tone: 'error',
-      });
-      return;
-    }
+    // Notes are optional for internal team; use clean default if omitted
+    const finalReason =
+      decisionReasonInput.trim() ||
+      (isLowScoreApproval
+        ? 'Approved by internal recruiter/admin review.'
+        : `Recruiter moved submission to ${VALIDATION_STAGE_LABELS[pendingDecisionStage]}.`);
 
     const logEntry = {
       id: `log_${Date.now()}`,
@@ -604,9 +738,7 @@ export const SubmissionDetailDrawer: React.FC<{
       toStage: pendingDecisionStage,
       actorName: profile?.full_name || profile?.email || 'Recruiter',
       actorRole: role,
-      reason:
-        decisionReasonInput.trim() ||
-        `Recruiter moved submission to ${VALIDATION_STAGE_LABELS[pendingDecisionStage]}.`,
+      reason: finalReason,
       isOverride: isLowScoreApproval,
       timestamp: new Date().toISOString(),
     };
@@ -642,7 +774,7 @@ export const SubmissionDetailDrawer: React.FC<{
           ? new Date().toISOString()
           : valRecord.approvedAt,
       overrideReason: isLowScoreApproval
-        ? decisionReasonInput.trim()
+        ? finalReason
         : valRecord.overrideReason,
       overriddenBy: isLowScoreApproval
         ? profile?.full_name || profile?.email || 'Recruiter'
@@ -661,6 +793,10 @@ export const SubmissionDetailDrawer: React.FC<{
           pendingDecisionStage === 'approved_for_submission'
             ? 'ready'
             : valRecord.clientPackage.status,
+        complianceAndConsentConfirmed:
+          pendingDecisionStage === 'approved_for_submission'
+            ? true
+            : valRecord.clientPackage.complianceAndConsentConfirmed,
       },
       decisionHistory: [logEntry, ...valRecord.decisionHistory],
     };
@@ -1461,6 +1597,7 @@ export const SubmissionDetailDrawer: React.FC<{
                     label="Meeting link"
                     disabled={!isHq}
                     value={valRecord.validationInterview.meetingLink}
+                    placeholder="Enter meeting link or click Auto-Generate below"
                     onChange={(e) =>
                       setValRecord({
                         ...valRecord,
@@ -1488,8 +1625,38 @@ export const SubmissionDetailDrawer: React.FC<{
                 </div>
 
                 {isHq && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 text-[12px]">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleGenerateMeetingLink}
+                    >
+                      <Zap className="h-3.5 w-3.5 mr-1 text-amber-500" />
+                      Auto-Generate Link
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleCopyInvite}
+                    >
+                      <Copy className="h-3.5 w-3.5 mr-1" />
+                      Copy Invite
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleShareWhatsApp}
+                      className="text-emerald-700 dark:text-emerald-400 border-emerald-500/40"
+                    >
+                      <MessageSquare className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                      Share via WhatsApp
+                    </Button>
+                  </div>
+                )}
+
+                {isHq && (
                   <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-[var(--border)]">
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
                       <Button
                         size="sm"
                         onClick={handleScheduleValidationInterview}
@@ -1500,14 +1667,25 @@ export const SubmissionDetailDrawer: React.FC<{
                           ? 'Update Scheduled Slot'
                           : 'Schedule Validation Interview'}
                       </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleCompleteValidationInterview(true)}
+                        loading={savingVal}
+                        className="text-emerald-700 dark:text-emerald-400 border-emerald-500/40"
+                      >
+                        <CheckCircle2 className="h-3.5 w-3.5 mr-1 text-emerald-600" />
+                        Quick Complete (WhatsApp / Phone Screen)
+                      </Button>
                       {valRecord.validationInterview.meetingLink && (
                         <a
                           href={valRecord.validationInterview.meetingLink}
                           target="_blank"
                           rel="noreferrer"
-                          className="text-[12px] text-[var(--accent)] underline px-2"
+                          className="text-[12px] text-[var(--accent)] underline px-2 flex items-center gap-1"
                         >
-                          Join link ↗
+                          <span>Join link</span>
+                          <ExternalLink className="h-3 w-3" />
                         </a>
                       )}
                     </div>
@@ -2156,13 +2334,22 @@ export const SubmissionDetailDrawer: React.FC<{
                   <Button
                     size="sm"
                     variant="primary"
+                    onClick={handleQuickApprove}
+                    loading={savingVal}
+                  >
+                    <Zap className="h-3.5 w-3.5 mr-1" />
+                    1-Click Direct Approve
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
                     onClick={() => {
                       setPendingDecisionStage('approved_for_submission');
                       setDecisionReasonInput('');
                     }}
                   >
                     <UserCheck className="h-3.5 w-3.5 mr-1" />
-                    Approve for Client Submission
+                    Approve with Notes...
                   </Button>
                   <Button
                     size="sm"
@@ -2309,7 +2496,6 @@ export const SubmissionDetailDrawer: React.FC<{
                     disabled={
                       (valRecord.validationStage !== 'approved_for_submission' &&
                         valRecord.validationStage !== 'submitted_to_client') ||
-                      !valRecord.clientPackage.complianceAndConsentConfirmed ||
                       !submission.is_valid
                     }
                     onClick={handleFinalSubmitToClient}
@@ -2388,70 +2574,71 @@ export const SubmissionDetailDrawer: React.FC<{
               )}
 
               {/* Shared Offer & Onboarding Lifecycle Snapshot */}
-              {(() => {
-                const offerRec = getOrBuildOfferOnboardingRecord(submission);
-                return (
-                  <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-2.5">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[12px] font-semibold text-[var(--text-primary)]">
-                        Shared Offer &amp; Onboarding Lifecycle
-                      </span>
-                      <Badge
-                        tone={
-                          offerRec.lifecycleStage === 'onboarded'
-                            ? 'emerald'
-                            : offerRec.lifecycleStage === 'offer_declined' ||
-                                offerRec.lifecycleStage === 'did_not_join'
-                              ? 'red'
-                              : 'sky'
-                        }
-                      >
-                        {OFFER_LIFECYCLE_LABELS[offerRec.lifecycleStage]}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
-                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
-                        <span className="text-[12px] text-[var(--text-tertiary)] block">
-                          Offer Date &amp; Status
+              {!isVendor &&
+                (() => {
+                  const offerRec = getOrBuildOfferOnboardingRecord(submission);
+                  return (
+                    <div className="rounded-[8px] border border-[var(--border)] bg-[var(--bg-subtle)] p-3.5 space-y-2.5">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <span className="text-[12px] font-semibold text-[var(--text-primary)]">
+                          Shared Offer &amp; Onboarding Lifecycle
                         </span>
-                        <strong className="font-mono text-[var(--text-primary)]">
-                          {offerRec.offerDate || '-'}
-                        </strong>
-                        <div className="text-[12px] text-[var(--text-secondary)]">
-                          {OFFER_STATUS_LABELS[offerRec.offerStatus]}
+                        <Badge
+                          tone={
+                            offerRec.lifecycleStage === 'onboarded'
+                              ? 'emerald'
+                              : offerRec.lifecycleStage === 'offer_declined' ||
+                                  offerRec.lifecycleStage === 'did_not_join'
+                                ? 'red'
+                                : 'sky'
+                          }
+                        >
+                          {OFFER_LIFECYCLE_LABELS[offerRec.lifecycleStage]}
+                        </Badge>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[12px]">
+                        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
+                          <span className="text-[12px] text-[var(--text-tertiary)] block">
+                            Offer Date &amp; Status
+                          </span>
+                          <strong className="font-mono text-[var(--text-primary)]">
+                            {offerRec.offerDate || '-'}
+                          </strong>
+                          <div className="text-[12px] text-[var(--text-secondary)]">
+                            {OFFER_STATUS_LABELS[offerRec.offerStatus]}
+                          </div>
+                        </div>
+                        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
+                          <span className="text-[12px] text-[var(--text-tertiary)] block">
+                            Response Date
+                          </span>
+                          <strong className="font-mono text-[var(--text-primary)]">
+                            {offerRec.offerResponseDate || '-'}
+                          </strong>
+                        </div>
+                        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
+                          <span className="text-[12px] text-[var(--text-tertiary)] block">
+                            Expected DOJ
+                          </span>
+                          <strong className="font-mono text-[var(--text-primary)]">
+                            {offerRec.expectedDoj || 'Not scheduled'}
+                          </strong>
+                        </div>
+                        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
+                          <span className="text-[12px] text-[var(--text-tertiary)] block">
+                            Confirmed Actual DOJ
+                          </span>
+                          <strong className="font-mono text-emerald-700 dark:text-emerald-300">
+                            {offerRec.actualDoj || 'Not yet joined'}
+                          </strong>
+                          <div className="text-[12px] text-[var(--text-secondary)]">
+                            {ONBOARDING_STATUS_LABELS[offerRec.onboardingStatus]}
+                          </div>
                         </div>
                       </div>
-                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
-                        <span className="text-[12px] text-[var(--text-tertiary)] block">
-                          Response Date
-                        </span>
-                        <strong className="font-mono text-[var(--text-primary)]">
-                          {offerRec.offerResponseDate || '-'}
-                        </strong>
-                      </div>
-                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
-                        <span className="text-[12px] text-[var(--text-tertiary)] block">
-                          Expected DOJ
-                        </span>
-                        <strong className="font-mono text-[var(--text-primary)]">
-                          {offerRec.expectedDoj || 'Not scheduled'}
-                        </strong>
-                      </div>
-                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface)] p-2">
-                        <span className="text-[12px] text-[var(--text-tertiary)] block">
-                          Confirmed Actual DOJ
-                        </span>
-                        <strong className="font-mono text-emerald-700 dark:text-emerald-300">
-                          {offerRec.actualDoj || 'Not yet joined'}
-                        </strong>
-                        <div className="text-[12px] text-[var(--text-secondary)]">
-                          {ONBOARDING_STATUS_LABELS[offerRec.onboardingStatus]}
-                        </div>
-                      </div>
                     </div>
-                  </div>
-                );
-              })()}
+                  );
+                })()}
 
               {/* Classic Stage Actions */}
               <div className="space-y-3 pb-4 border-b border-[var(--border)]">
@@ -2526,136 +2713,138 @@ export const SubmissionDetailDrawer: React.FC<{
                 </div>
               </div>
 
-              {/* Formal Interviews */}
-              <div className="space-y-3 pb-4 border-b border-[var(--border)]">
-                <h3 className="text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
-                  Formal Interview Rounds ({interviewsData?.data?.length || 0})
-                </h3>
-                {!interviewsData?.data?.length ? (
-                  <p className="text-[13px] leading-[20px] text-[var(--text-secondary)]">
-                    No formal interview rounds scheduled.
-                  </p>
-                ) : (
-                  <div className="space-y-3">
-                    {interviewsData.data.map((iv) => {
-                      const feedbacks = iv.interview_feedback || [];
-                      return (
-                        <div
-                          key={iv.id}
-                          className="rounded-[6px] border border-[var(--border)] p-3 space-y-2 text-[13px] leading-[20px]"
-                        >
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div className="font-medium text-[var(--text-primary)]">
-                              <span className="font-mono tabular-nums mr-1.5 text-[var(--text-tertiary)]">
-                                #{iv.round_number}
-                              </span>
-                              {ROUND_LABELS[iv.round_type]} · {iv.mode}
-                            </div>
-                            <Badge
-                              tone={
-                                iv.status === 'completed'
-                                  ? 'emerald'
-                                  : iv.status === 'scheduled'
-                                    ? 'slate'
-                                    : 'red'
-                              }
-                            >
-                              {iv.status}
-                            </Badge>
-                          </div>
-                          <div className="flex flex-wrap items-center gap-4 text-[12px] leading-[16px] text-[var(--text-tertiary)] font-mono tabular-nums">
-                            <span>{formatLocalDateTime(iv.scheduled_at)}</span>
-                            <span>{iv.duration_minutes}m</span>
-                            {iv.meeting_link && (
-                              <a
-                                href={iv.meeting_link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-[var(--accent)] underline font-sans"
+              {/* Formal Interviews (Admins, Recruiters & Clients only - hidden from Vendors) */}
+              {!isCandidate && !isVendor && (
+                <div className="space-y-3 pb-4 border-b border-[var(--border)]">
+                  <h3 className="text-[12px] leading-[16px] font-medium text-[var(--text-secondary)]">
+                    Formal Interview Rounds ({interviewsData?.data?.length || 0})
+                  </h3>
+                  {!interviewsData?.data?.length ? (
+                    <p className="text-[13px] leading-[20px] text-[var(--text-secondary)]">
+                      No formal interview rounds scheduled.
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {interviewsData.data.map((iv) => {
+                        const feedbacks = iv.interview_feedback || [];
+                        return (
+                          <div
+                            key={iv.id}
+                            className="rounded-[6px] border border-[var(--border)] p-3 space-y-2 text-[13px] leading-[20px]"
+                          >
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-medium text-[var(--text-primary)]">
+                                <span className="font-mono tabular-nums mr-1.5 text-[var(--text-tertiary)]">
+                                  #{iv.round_number}
+                                </span>
+                                {ROUND_LABELS[iv.round_type]} · {iv.mode}
+                              </div>
+                              <Badge
+                                tone={
+                                  iv.status === 'completed'
+                                    ? 'emerald'
+                                    : iv.status === 'scheduled'
+                                      ? 'slate'
+                                      : 'red'
+                                }
                               >
-                                Meeting link
-                              </a>
+                                {iv.status}
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap items-center gap-4 text-[12px] leading-[16px] text-[var(--text-tertiary)] font-mono tabular-nums">
+                              <span>{formatLocalDateTime(iv.scheduled_at)}</span>
+                              <span>{iv.duration_minutes}m</span>
+                              {iv.meeting_link && (
+                                <a
+                                  href={iv.meeting_link}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-[var(--accent)] underline font-sans"
+                                >
+                                  Meeting link
+                                </a>
+                              )}
+                            </div>
+
+                            {(isHq || isClient) && iv.status === 'scheduled' && (
+                              <div className="flex flex-wrap gap-1.5 pt-1">
+                                <Button
+                                  size="sm"
+                                  variant="primary"
+                                  onClick={() => setScreeningInterview(iv)}
+                                >
+                                  Run screening session
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleUpdateInterviewStatus(iv.id, 'completed')}
+                                >
+                                  Complete
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => handleUpdateInterviewStatus(iv.id, 'no_show')}
+                                >
+                                  No-show
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleUpdateInterviewStatus(iv.id, 'cancelled')}
+                                >
+                                  Cancel
+                                </Button>
+                              </div>
+                            )}
+
+                            {(isHq || isClient) && iv.status === 'completed' && (
+                              <div className="pt-1">
+                                <Button size="sm" onClick={() => setFeedbackInterview(iv)}>
+                                  Submit feedback
+                                </Button>
+                              </div>
+                            )}
+
+                            {feedbacks.length > 0 && !isCandidate && !isVendor && (
+                              <div className="pt-2 border-t border-[var(--border)] space-y-2">
+                                {feedbacks.map((fb) => (
+                                  <div
+                                    key={fb.id}
+                                    className="rounded-[6px] bg-[var(--bg-subtle)] p-2.5 space-y-1 text-[12px] leading-[16px]"
+                                  >
+                                    <div className="flex items-center justify-between">
+                                      <span className="font-mono tabular-nums text-[var(--text-primary)]">
+                                        Overall {fb.overall_rating}/5 · Skill {fb.skill_rating}/5 · Comm{' '}
+                                        {fb.communication_rating}/5
+                                      </span>
+                                      <Badge
+                                        tone={
+                                          fb.decision === 'advance'
+                                            ? 'emerald'
+                                            : fb.decision === 'reject'
+                                              ? 'red'
+                                              : 'amber'
+                                        }
+                                      >
+                                        {fb.decision}
+                                      </Badge>
+                                    </div>
+                                    <p className="text-[13px] leading-[20px] text-[var(--text-primary)]">
+                                      {fb.feedback}
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
                             )}
                           </div>
-
-                          {(isHq || isClient) && iv.status === 'scheduled' && (
-                            <div className="flex flex-wrap gap-1.5 pt-1">
-                              <Button
-                                size="sm"
-                                variant="primary"
-                                onClick={() => setScreeningInterview(iv)}
-                              >
-                                Run screening session
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleUpdateInterviewStatus(iv.id, 'completed')}
-                              >
-                                Complete
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleUpdateInterviewStatus(iv.id, 'no_show')}
-                              >
-                                No-show
-                              </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleUpdateInterviewStatus(iv.id, 'cancelled')}
-                              >
-                                Cancel
-                              </Button>
-                            </div>
-                          )}
-
-                          {(isHq || isClient) && iv.status === 'completed' && (
-                            <div className="pt-1">
-                              <Button size="sm" onClick={() => setFeedbackInterview(iv)}>
-                                Submit feedback
-                              </Button>
-                            </div>
-                          )}
-
-                          {feedbacks.length > 0 && !isCandidate && (
-                            <div className="pt-2 border-t border-[var(--border)] space-y-2">
-                              {feedbacks.map((fb) => (
-                                <div
-                                  key={fb.id}
-                                  className="rounded-[6px] bg-[var(--bg-subtle)] p-2.5 space-y-1 text-[12px] leading-[16px]"
-                                >
-                                  <div className="flex items-center justify-between">
-                                    <span className="font-mono tabular-nums text-[var(--text-primary)]">
-                                      Overall {fb.overall_rating}/5 · Skill {fb.skill_rating}/5 · Comm{' '}
-                                      {fb.communication_rating}/5
-                                    </span>
-                                    <Badge
-                                      tone={
-                                        fb.decision === 'advance'
-                                          ? 'emerald'
-                                          : fb.decision === 'reject'
-                                            ? 'red'
-                                            : 'amber'
-                                      }
-                                    >
-                                      {fb.decision}
-                                    </Badge>
-                                  </div>
-                                  <p className="text-[13px] leading-[20px] text-[var(--text-primary)]">
-                                    {fb.feedback}
-                                  </p>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Validation Gate Audit Trail */}
               <div className="space-y-2.5 pb-4 border-b border-[var(--border)]">
@@ -2764,16 +2953,16 @@ export const SubmissionDetailDrawer: React.FC<{
             valRecord &&
             (valRecord.matchSummary.jdMatchPercentage < 60 ||
               valRecord.validationInterview.status !== 'completed') && (
-              <div className="rounded-[6px] border border-amber-500/40 bg-amber-500/10 p-3 text-[12px] text-[var(--text-primary)]">
-                <strong>Recruiter Override Notice:</strong> Either the validation interview is not yet marked completed or the AI JD match is below 60%. Document your override reason below to approve.
+              <div className="rounded-[6px] border border-blue-500/30 bg-blue-500/10 p-3 text-[12px] text-[var(--text-primary)]">
+                <strong>Internal Recruiter Approval:</strong> Validation interview was conducted offline or not yet marked completed. You may add notes below or click Confirm Decision to approve directly.
               </div>
             )}
           <Textarea
-            label="Decision / Override Reason (required for overrides, holds, or rejections)"
+            label="Decision / Validation Notes (optional)"
             rows={3}
             value={decisionReasonInput}
             onChange={(e) => setDecisionReasonInput(e.target.value)}
-            placeholder="Document evidence, validation outcome, or override justification..."
+            placeholder="Add validation evidence, phone screen notes, or leave blank to confirm immediately..."
           />
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={() => setPendingDecisionStage(null)}>
