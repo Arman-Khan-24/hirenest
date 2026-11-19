@@ -1,7 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ShieldCheck } from 'lucide-react';
+import { ShieldCheck, X, Plus, ChevronDown, Check } from 'lucide-react';
 import { classifyRequirement } from '../../lib/requirementCategory';
 import { hasBgvRequired } from './RequirementRibbon';
+import {
+  DEFAULT_BASIC_BGV_CHECKS,
+  getRequirementBgvChecks,
+  getSavedBgvSuggestions,
+  saveBgvSuggestion,
+} from '../../lib/bgv';
 import { parseExperienceInput } from '../../lib/format';
 import { z } from 'zod';
 import {
@@ -129,6 +135,12 @@ export const RequirementFormModal: React.FC<{
     if (initialMeta.hasBgv !== undefined && initialMeta.hasBgv !== null) return initialMeta.hasBgv;
     return hasBgvRequired(initialRequirement);
   });
+  const [bgvChecks, setBgvChecks] = useState<string[]>(() => {
+    const existing = getRequirementBgvChecks(initialRequirement);
+    return existing.length > 0 ? existing : [...DEFAULT_BASIC_BGV_CHECKS];
+  });
+  const [bgvInput, setBgvInput] = useState<string>('');
+  const [showBgvDropdown, setShowBgvDropdown] = useState<boolean>(false);
   const [workingDaysInput, setWorkingDaysInput] = useState<string>(
     initialMeta.workingDaysPerMonth !== null && initialMeta.workingDaysPerMonth !== undefined
       ? String(initialMeta.workingDaysPerMonth)
@@ -276,6 +288,10 @@ export const RequirementFormModal: React.FC<{
         ? parsed.hasBgv
         : hasBgvRequired(initialRequirement)
     );
+    const existingBgvChecks = getRequirementBgvChecks(initialRequirement);
+    setBgvChecks(existingBgvChecks.length > 0 ? existingBgvChecks : [...DEFAULT_BASIC_BGV_CHECKS]);
+    setBgvInput('');
+    setShowBgvDropdown(false);
     setWorkingDaysInput(parsed.workingDaysPerMonth != null ? String(parsed.workingDaysPerMonth) : '');
     setOpeningsInput(String(initialRequirement?.openings ?? 1));
     setSlaHoursInput(String(initialRequirement?.submission_sla_hours ?? defaultSlaHours));
@@ -552,6 +568,7 @@ export const RequirementFormModal: React.FC<{
         category: effectiveCategory,
         profileType: profileType || null,
         hasBgv,
+        bgvChecks: hasBgv ? bgvChecks : [],
         paymentTerms: financialNotesInput.trim() || null,
         notes: importantNotesInput.trim() || null,
         joiningTimeline: joiningTimelineInput.trim() || null,
@@ -563,6 +580,10 @@ export const RequirementFormModal: React.FC<{
             ? Number(workingDaysInput)
             : null,
       });
+
+      if (hasBgv) {
+        bgvChecks.forEach((c) => saveBgvSuggestion(c));
+      }
 
       let savedReq: Requirement & { wasDuplicatePrevented?: boolean };
       const existingTargetId = initialRequirement?.id || savedRequirementRef.current?.id;
@@ -896,7 +917,13 @@ export const RequirementFormModal: React.FC<{
               <span className="block text-[12px] font-medium text-[var(--text-secondary)]">Verification process</span>
               <button
                 type="button"
-                onClick={() => setHasBgv(!hasBgv)}
+                onClick={() => {
+                  const next = !hasBgv;
+                  setHasBgv(next);
+                  if (next && bgvChecks.length === 0) {
+                    setBgvChecks([...DEFAULT_BASIC_BGV_CHECKS]);
+                  }
+                }}
                 className={`w-full flex items-center justify-between h-[34px] px-2.5 rounded-[6px] border text-[12px] transition-colors cursor-pointer ${
                   hasBgv
                     ? 'border-sky-500 bg-sky-500/10 text-sky-800 dark:text-sky-300 font-medium'
@@ -916,6 +943,234 @@ export const RequirementFormModal: React.FC<{
               </button>
             </div>
           </div>
+
+          {hasBgv && (
+            <div className="rounded-[8px] border border-sky-500/30 bg-sky-500/5 p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div className="flex items-center gap-1.5 text-[12px] font-semibold text-sky-900 dark:text-sky-200">
+                  <ShieldCheck className="h-4 w-4 text-sky-600 shrink-0" />
+                  <span>Mandatory BGV Checks &amp; Requirements</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setBgvChecks([...DEFAULT_BASIC_BGV_CHECKS]);
+                    }}
+                    className="text-sky-700 dark:text-sky-300 hover:underline px-1.5 py-0.5 rounded cursor-pointer font-medium"
+                    title="Reset to default Basic BGV checks: Employment History Check & Police Clearance Certificate (PCC)"
+                  >
+                    Reset Basic BGV
+                  </button>
+                  <span className="text-[var(--text-tertiary)]">·</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const full = [
+                        'Employment History Check',
+                        'Police Clearance Certificate (PCC)',
+                        'Education Verification',
+                        'Identity Verification (Aadhaar / Passport)',
+                      ];
+                      setBgvChecks(full);
+                      full.forEach((c) => saveBgvSuggestion(c));
+                    }}
+                    className="text-sky-700 dark:text-sky-300 hover:underline px-1.5 py-0.5 rounded cursor-pointer font-medium"
+                    title="Apply Full BGV preset: Emp, PCC, Education, and Identity"
+                  >
+                    + Full BGV
+                  </button>
+                  <span className="text-[var(--text-tertiary)]">·</span>
+                  <button
+                    type="button"
+                    onClick={() => setBgvChecks([])}
+                    className="text-[var(--text-tertiary)] hover:text-red-600 px-1.5 py-0.5 rounded cursor-pointer"
+                    title="Clear all checks"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Selected checks tags */}
+              <div className="flex flex-wrap items-center gap-1.5 min-h-[30px] p-2 rounded-[6px] bg-[var(--surface)] border border-sky-500/20">
+                {bgvChecks.map((check) => (
+                  <span
+                    key={check}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[12px] font-medium bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200 border border-sky-300 dark:border-sky-800 shadow-xs"
+                  >
+                    <span>{check}</span>
+                    <button
+                      type="button"
+                      onClick={() => setBgvChecks(bgvChecks.filter((c) => c !== check))}
+                      className="text-sky-700 hover:text-red-600 dark:text-sky-300 dark:hover:text-red-400 cursor-pointer p-0.5 rounded-full"
+                      title={`Remove check: ${check}`}
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </span>
+                ))}
+                {bgvChecks.length === 0 && (
+                  <span className="text-[12px] text-[var(--text-tertiary)] italic">
+                    No checks specified yet. Select from suggestions below or type a custom check.
+                  </span>
+                )}
+              </div>
+
+              {/* Autocomplete / Dropdown Input */}
+              <div className="relative">
+                <div className="flex gap-1.5">
+                  <div className="relative flex-1">
+                    <input
+                      type="text"
+                      value={bgvInput}
+                      onChange={(e) => {
+                        setBgvInput(e.target.value);
+                        setShowBgvDropdown(true);
+                      }}
+                      onFocus={() => setShowBgvDropdown(true)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          const trimmed = bgvInput.trim();
+                          if (trimmed && !bgvChecks.includes(trimmed)) {
+                            setBgvChecks([...bgvChecks, trimmed]);
+                            saveBgvSuggestion(trimmed);
+                            setBgvInput('');
+                            setShowBgvDropdown(false);
+                          }
+                        }
+                      }}
+                      placeholder="Type or select required check (e.g. Police Clearance, Education, Drug Test...)"
+                      className="w-full h-[32px] px-2.5 text-[12px] rounded-[6px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] focus:outline-hidden focus:ring-1 focus:ring-sky-500 placeholder:text-[var(--text-tertiary)]"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowBgvDropdown(!showBgvDropdown)}
+                      className="absolute right-2 top-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                    >
+                      <ChevronDown className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={!bgvInput.trim()}
+                    onClick={() => {
+                      const trimmed = bgvInput.trim();
+                      if (trimmed && !bgvChecks.includes(trimmed)) {
+                        setBgvChecks([...bgvChecks, trimmed]);
+                        saveBgvSuggestion(trimmed);
+                        setBgvInput('');
+                        setShowBgvDropdown(false);
+                      }
+                    }}
+                    className="h-[32px] px-3 shrink-0"
+                  >
+                    <Plus className="h-3.5 w-3.5 mr-1" />
+                    Add
+                  </Button>
+                </div>
+
+                {/* Dropdown Menu */}
+                {showBgvDropdown && (
+                  <div
+                    className="absolute left-0 right-0 top-full mt-1 z-50 max-h-56 overflow-y-auto rounded-[8px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-primary)] shadow-xl p-1.5 space-y-1"
+                    tabIndex={-1}
+                  >
+                    <div className="flex items-center justify-between px-2 py-1 text-[11px] font-semibold text-[var(--text-tertiary)] border-b border-[var(--border)]">
+                      <span>Suggested &amp; Saved BGV Checks</span>
+                      <button
+                        type="button"
+                        onClick={() => setShowBgvDropdown(false)}
+                        className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+
+                    {bgvInput.trim() &&
+                      !getSavedBgvSuggestions().some(
+                        (s) => s.toLowerCase() === bgvInput.trim().toLowerCase()
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const trimmed = bgvInput.trim();
+                            if (!bgvChecks.includes(trimmed)) {
+                              setBgvChecks([...bgvChecks, trimmed]);
+                              saveBgvSuggestion(trimmed);
+                            }
+                            setBgvInput('');
+                            setShowBgvDropdown(false);
+                          }}
+                          className="w-full text-left px-2.5 py-1.5 rounded-[4px] text-[12px] font-medium text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-950/50 flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                          <span>Add custom check: <strong>"{bgvInput.trim()}"</strong></span>
+                        </button>
+                      )}
+
+                    {getSavedBgvSuggestions()
+                      .filter(
+                        (s) =>
+                          !bgvInput.trim() ||
+                          s.toLowerCase().includes(bgvInput.trim().toLowerCase())
+                      )
+                      .map((suggestion) => {
+                        const isAlreadySelected = bgvChecks.includes(suggestion);
+                        return (
+                          <button
+                            key={suggestion}
+                            type="button"
+                            onClick={() => {
+                              if (!isAlreadySelected) {
+                                setBgvChecks([...bgvChecks, suggestion]);
+                                saveBgvSuggestion(suggestion);
+                              }
+                              setBgvInput('');
+                              setShowBgvDropdown(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-1.5 rounded-[4px] text-[12px] flex items-center justify-between transition-colors cursor-pointer ${
+                              isAlreadySelected
+                                ? 'bg-sky-500/10 text-sky-800 dark:text-sky-300 font-medium'
+                                : 'text-[var(--text-primary)] hover:bg-[var(--bg-subtle)]'
+                            }`}
+                          >
+                            <span>{suggestion}</span>
+                            {isAlreadySelected && (
+                              <Check className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick suggestion chips */}
+              <div className="flex flex-wrap items-center gap-1 pt-1 text-[11px] text-[var(--text-tertiary)]">
+                <span className="font-medium mr-1">Suggestions:</span>
+                {getSavedBgvSuggestions()
+                  .filter((s) => !bgvChecks.includes(s))
+                  .slice(0, 5)
+                  .map((suggestion) => (
+                    <button
+                      key={suggestion}
+                      type="button"
+                      onClick={() => {
+                        setBgvChecks([...bgvChecks, suggestion]);
+                        saveBgvSuggestion(suggestion);
+                      }}
+                      className="px-2 py-0.5 rounded-[4px] border border-[var(--border)] bg-[var(--surface)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:border-sky-400 hover:bg-sky-50/50 dark:hover:bg-sky-950/30 transition-colors cursor-pointer"
+                    >
+                      + {suggestion}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          )}
 
           {aiSkillSuggestions.length > 0 && (
             <div className="rounded-[6px] border border-[var(--ai-block-border)] bg-[var(--ai-block-bg)] p-3 space-y-2">

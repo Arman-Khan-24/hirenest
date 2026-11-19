@@ -126,6 +126,52 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const isHq = role === 'admin' || role === 'recruiter';
   const isClient = role === 'client_manager' || role === 'client_member';
   const isCandidate = role === 'candidate';
+  const isVendor = role === 'vendor_admin' || role === 'vendor_recruiter';
+
+  const handleNotificationClick = (n: { link?: string | null; kind?: string; title?: string; body?: string }) => {
+    let target = (n.link || '').trim();
+
+    // If link is missing, derive it from kind or notification context
+    if (!target) {
+      const isClarification =
+        n.kind === 'clarification' ||
+        n.title?.toLowerCase().includes('clarification') ||
+        n.body?.toLowerCase().includes('clarification');
+      if (isClarification) {
+        target = isVendor ? '/vendor/submissions' : '/admin/submissions';
+      } else {
+        return;
+      }
+    }
+
+    // Extract UUID if present (e.g. /vendor/submissions/uuid or ?subId=uuid)
+    const uuidMatch = target.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
+    const entityId = uuidMatch ? uuidMatch[0] : null;
+
+    if (target.includes('/submissions')) {
+      if (isVendor) {
+        target = entityId ? `/vendor/submissions?subId=${entityId}` : '/vendor/submissions';
+      } else if (isHq) {
+        target = entityId ? `/admin/submissions?subId=${entityId}` : '/admin/submissions';
+      } else if (isClient) {
+        target = entityId ? `/client/submissions?subId=${entityId}` : '/client/submissions';
+      }
+    } else if (target.includes('/requirements') && entityId) {
+      if (isVendor) {
+        target = `/vendor/requirements/${entityId}`;
+      } else if (isHq) {
+        target = `/admin/requirements/${entityId}`;
+      } else if (isClient) {
+        target = `/client/requirements/${entityId}`;
+      }
+    } else if (target.startsWith('/vendor/') && !isVendor) {
+      target = isHq ? target.replace('/vendor/', '/admin/') : target.replace('/vendor/', '/client/');
+    } else if (target.startsWith('/admin/') && !isHq) {
+      target = isVendor ? target.replace('/admin/', '/vendor/') : target.replace('/admin/', '/client/');
+    }
+
+    navigate(target);
+  };
 
   useEffect(() => {
     if (darkMode) {
@@ -687,7 +733,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                           onClick={() => {
                             if (!n.read_at) markReadMutation.mutate(n.id);
                             setNotifOpen(false);
-                            if (n.link) navigate(n.link);
+                            handleNotificationClick(n);
                           }}
                           className={`px-4 py-3 text-[13px] leading-[20px] cursor-pointer hover:bg-[var(--bg-hover)] transition-colors ${
                             !n.read_at ? 'bg-[var(--drawer-header-bg)]' : ''

@@ -26,7 +26,8 @@ export type ValidationDecisionStage =
   | 'approved_for_submission'
   | 'hold_for_clarification'
   | 'rejected'
-  | 'submitted_to_client';
+  | 'submitted_to_client'
+  | 'withdrawn';
 
 export type RecruiterDecisionGate = ValidationDecisionStage;
 
@@ -47,6 +48,7 @@ export const VALIDATION_STAGE_LABELS: Record<ValidationDecisionStage, string> = 
   hold_for_clarification: 'Hold for Clarification',
   rejected: 'Rejected',
   submitted_to_client: 'Submitted to Client',
+  withdrawn: 'Withdrawn',
 };
 
 export const DECISION_GATE_LABELS = VALIDATION_STAGE_LABELS;
@@ -60,6 +62,7 @@ export const DECISION_GATE_TONES: Record<ValidationDecisionStage, BadgeTone> = {
   hold_for_clarification: 'amber',
   rejected: 'red',
   submitted_to_client: 'rich_blue',
+  withdrawn: 'neutral',
 };
 
 export const VALIDATION_STAGE_ORDER: ValidationDecisionStage[] = [
@@ -536,23 +539,33 @@ export function buildSubmissionValidationRecord(
     warnings.push(`Candidate experience (${expYears}y) is below requirement minimum (${minExp}y).`);
   }
 
-  let initialStage: ValidationDecisionStage = existing?.validationStage || 'recruiter_review';
-  if (!existing) {
-    if (
-      submission.stage === 'client_review' ||
-      submission.stage === 'interviewing' ||
-      submission.stage === 'offered' ||
-      submission.stage === 'offer_accepted' ||
-      submission.stage === 'onboarded'
-    ) {
-      initialStage = 'submitted_to_client';
-    } else if (submission.stage === 'rejected') {
-      initialStage = 'rejected';
-    } else if (submission.stage === 'applied') {
-      initialStage = 'matched';
-    } else {
-      initialStage = 'recruiter_review';
-    }
+  const isPendingClarification = submission.validation_state === 'pending_clarification';
+
+  let initialStage: ValidationDecisionStage;
+  if (submission.stage === 'rejected') {
+    initialStage = 'rejected';
+  } else if (submission.stage === 'withdrawn') {
+    initialStage = 'withdrawn';
+  } else if (isPendingClarification) {
+    initialStage = 'hold_for_clarification';
+  } else if (
+    existing?.validationStage &&
+    existing.validationStage !== 'rejected' &&
+    existing.validationStage !== 'withdrawn'
+  ) {
+    initialStage = existing.validationStage;
+  } else if (
+    submission.stage === 'client_review' ||
+    submission.stage === 'interviewing' ||
+    submission.stage === 'offered' ||
+    submission.stage === 'offer_accepted' ||
+    submission.stage === 'onboarded'
+  ) {
+    initialStage = 'submitted_to_client';
+  } else if (submission.stage === 'applied') {
+    initialStage = 'matched';
+  } else {
+    initialStage = 'recruiter_review';
   }
 
   const isVendorOwned =
@@ -631,18 +644,22 @@ export function buildSubmissionValidationRecord(
         overall_recommendation: 0,
       },
     },
-    followUp: existing?.followUp || {
-      routeType: isVendorOwned ? 'vendor' : 'direct_candidate',
-      vendorOrgId: submission.vendor_org_id || cand?.owner_vendor_org_id || null,
-      vendorOrgName,
-      requestType: 'skill_clarification',
-      status: 'none',
-      targetSkills: missingOrUnclear,
-      recruiterInstructions:
-        missingOrUnclear.length > 0
-          ? `Please provide updated resume evidence or written project clarification for: ${missingOrUnclear.join(', ')}.`
-          : 'Please confirm candidate availability, notice period, and project evidence for client submission.',
-    },
+    followUp: existing?.followUp && existing.followUp.status !== 'none'
+      ? existing.followUp
+      : {
+          routeType: isVendorOwned ? 'vendor' : 'direct_candidate',
+          vendorOrgId: submission.vendor_org_id || cand?.owner_vendor_org_id || null,
+          vendorOrgName,
+          requestType: 'skill_clarification',
+          status: isPendingClarification
+            ? (isVendorOwned ? 'pending_vendor' : 'pending_candidate')
+            : 'none',
+          targetSkills: missingOrUnclear,
+          recruiterInstructions:
+            missingOrUnclear.length > 0
+              ? `Please provide updated resume evidence or written project clarification for: ${missingOrUnclear.join(', ')}.`
+              : 'Please confirm candidate availability, notice period, and project evidence for client submission.',
+        },
     clientPackage: existing?.clientPackage || {
       packageId: `pkg_${submission.id.slice(0, 8)}`,
       recipientClientOrgName: req?.organizations?.name || 'Client Hiring Team',

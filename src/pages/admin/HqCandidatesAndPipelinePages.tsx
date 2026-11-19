@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { ScheduleInterviewModal } from '../../components/domain/InterviewModals';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -41,6 +41,7 @@ import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetail
 import { createDealRoom } from '../../api/dealRoom';
 import { InterviewFeedbackModal } from '../../components/domain/InterviewModals';
 import { DuplicateDialog } from '../../components/domain/DuplicateDialog';
+import { SheetColumnFilter, type ColumnFilterItem, type SortDirection } from '../../components/domain/SheetTableFilter';
 import {
   fetchCandidates,
   fetchCandidateById,
@@ -1380,6 +1381,14 @@ export const HqSubmissionsPage: React.FC = () => {
   const [decisionGateFilter, setDecisionGateFilter] = useState<RecruiterDecisionGate | ''>('');
   const [drawerSubId, setDrawerSubId] = useState<string | null>(initialSubId);
 
+  // Sheet-style column filter state (client/requirement level, applied client-side)
+  const [clientFilter, setClientFilter] = useState<Set<string>>(new Set());
+  const [requirementFilter, setRequirementFilter] = useState<Set<string>>(new Set());
+  const [vendorColumnFilter, setVendorColumnFilter] = useState<Set<string>>(new Set());
+  const [stageColumnFilter, setStageColumnFilter] = useState<Set<string>>(new Set());
+  const [candidateSortDir, setCandidateSortDir] = useState<SortDirection>(null);
+  const [clientSortDir, setClientSortDir] = useState<SortDirection>(null);
+
   React.useEffect(() => {
     if (initialSubId) {
       setDrawerSubId(initialSubId);
@@ -1415,9 +1424,101 @@ export const HqSubmissionsPage: React.FC = () => {
     return { sub, validation };
   });
 
-  const filteredRows = decisionGateFilter
+  // Build filter option lists from currently loaded data
+  const clientFilterItems = useMemo<ColumnFilterItem[]>(() => {
+    const seen = new Map<string, number>();
+    for (const { sub } of rows) {
+      const name = sub.requirements?.organizations?.name || '(No client)';
+      seen.set(name, (seen.get(name) || 0) + 1);
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([label, count]) => ({ value: label, label, count }));
+  }, [rows]);
+
+  const requirementFilterItems = useMemo<ColumnFilterItem[]>(() => {
+    const seen = new Map<string, { label: string; count: number }>();
+    for (const { sub } of rows) {
+      const reqId = sub.requirement_id;
+      const label = sub.requirements?.title || reqId;
+      const clientName = sub.requirements?.organizations?.name || '';
+      if (!seen.has(reqId)) {
+        seen.set(reqId, { label: clientName ? `${label} (${clientName})` : label, count: 0 });
+      }
+      seen.get(reqId)!.count += 1;
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => a[1].label.localeCompare(b[1].label))
+      .map(([value, { label, count }]) => ({ value, label, count }));
+  }, [rows]);
+
+  const vendorFilterItems = useMemo<ColumnFilterItem[]>(() => {
+    const seen = new Map<string, number>();
+    for (const { sub } of rows) {
+      const name = sub.organizations?.name || sub.source || 'Direct / Admin';
+      seen.set(name, (seen.get(name) || 0) + 1);
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([label, count]) => ({ value: label, label, count }));
+  }, [rows]);
+
+  const stageColumnFilterItems = useMemo<ColumnFilterItem[]>(() => {
+    const seen = new Map<string, number>();
+    for (const { sub } of rows) {
+      const s = sub.stage || 'unknown';
+      seen.set(s, (seen.get(s) || 0) + 1);
+    }
+    return Array.from(seen.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([value, count]) => ({ value, label: value.replace(/_/g, ' '), count }));
+  }, [rows]);
+
+  // Apply all column filters + decision gate filter client-side
+  let filteredRows = decisionGateFilter
     ? rows.filter((r) => r.validation.decision_gate === decisionGateFilter)
     : rows;
+
+  if (clientFilter.size > 0 && clientFilter.size < clientFilterItems.length) {
+    filteredRows = filteredRows.filter((r) => {
+      const name = r.sub.requirements?.organizations?.name || '(No client)';
+      return clientFilter.has(name);
+    });
+  }
+  if (requirementFilter.size > 0 && requirementFilter.size < requirementFilterItems.length) {
+    filteredRows = filteredRows.filter((r) => requirementFilter.has(r.sub.requirement_id));
+  }
+  if (vendorColumnFilter.size > 0 && vendorColumnFilter.size < vendorFilterItems.length) {
+    filteredRows = filteredRows.filter((r) => {
+      const name = r.sub.organizations?.name || r.sub.source || 'Direct / Admin';
+      return vendorColumnFilter.has(name);
+    });
+  }
+  if (stageColumnFilter.size > 0 && stageColumnFilter.size < stageColumnFilterItems.length) {
+    filteredRows = filteredRows.filter((r) => stageColumnFilter.has(r.sub.stage || 'unknown'));
+  }
+
+  // Apply candidate / client sort
+  if (candidateSortDir) {
+    filteredRows = [...filteredRows].sort((a, b) => {
+      const na = a.sub.candidates?.full_name || '';
+      const nb = b.sub.candidates?.full_name || '';
+      return candidateSortDir === 'asc' ? na.localeCompare(nb) : nb.localeCompare(na);
+    });
+  } else if (clientSortDir) {
+    filteredRows = [...filteredRows].sort((a, b) => {
+      const ca = a.sub.requirements?.organizations?.name || '';
+      const cb = b.sub.requirements?.organizations?.name || '';
+      return clientSortDir === 'asc' ? ca.localeCompare(cb) : cb.localeCompare(ca);
+    });
+  }
+
+  const hasColumnFilters =
+    (clientFilter.size > 0 && clientFilter.size < clientFilterItems.length) ||
+    (requirementFilter.size > 0 && requirementFilter.size < requirementFilterItems.length) ||
+    (vendorColumnFilter.size > 0 && vendorColumnFilter.size < vendorFilterItems.length) ||
+    (stageColumnFilter.size > 0 && stageColumnFilter.size < stageColumnFilterItems.length);
+
   const aiSummaries = useAiInterviewSummaries(filteredRows.map((r) => r.sub.id)).data;
 
   return (
@@ -1499,7 +1600,7 @@ export const HqSubmissionsPage: React.FC = () => {
             ]}
           />
         </div>
-        {(stage || source || validFilter || decisionGateFilter) && (
+        {(stage || source || validFilter || decisionGateFilter || hasColumnFilters) && (
           <Button
             size="sm"
             variant="ghost"
@@ -1508,11 +1609,22 @@ export const HqSubmissionsPage: React.FC = () => {
               setSource('');
               setValidFilter('');
               setDecisionGateFilter('');
+              setClientFilter(new Set());
+              setRequirementFilter(new Set());
+              setVendorColumnFilter(new Set());
+              setStageColumnFilter(new Set());
+              setCandidateSortDir(null);
+              setClientSortDir(null);
               setPage(1);
             }}
           >
             Clear filters
           </Button>
+        )}
+        {hasColumnFilters && (
+          <span className="text-[11px] text-sky-600 font-semibold ml-1">
+            Column filters active · {filteredRows.length} of {rows.length} rows
+          </span>
         )}
       </div>
 
@@ -1530,11 +1642,76 @@ export const HqSubmissionsPage: React.FC = () => {
           <div className="overflow-x-auto border-t border-[var(--border)]">
             <table className="w-full text-left [&_th]:px-3 [&_td]:px-3 [&_th]:py-2.5 [&_td]:py-2.5">
               <thead>
-                <tr>
-                  <th className="min-w-[140px]">Candidate</th>
-                  <th className="min-w-[180px]">Requirement &amp; client</th>
-                  <th className="min-w-[120px]">Submission stage</th>
-                  <th className="min-w-[130px]">Source &amp; vendor</th>
+                <tr className="text-[12px] text-[var(--text-secondary)] font-medium border-b border-[var(--border)]">
+                  <th className="min-w-[140px]">
+                    <SheetColumnFilter
+                      title="Candidate"
+                      items={[]}
+                      selectedValues={new Set()}
+                      onSelectionChange={() => {}}
+                      sortDirection={candidateSortDir}
+                      onSortChange={setCandidateSortDir}
+                      sortAscLabel="A → Z"
+                      sortDescLabel="Z → A"
+                    >
+                      <span>Candidate</span>
+                    </SheetColumnFilter>
+                  </th>
+                  <th className="min-w-[180px]">
+                    <SheetColumnFilter
+                      title="Client"
+                      items={clientFilterItems}
+                      selectedValues={clientFilter.size === 0 ? new Set(clientFilterItems.map(i => i.value)) : clientFilter}
+                      onSelectionChange={(sel) => {
+                        if (sel.size === clientFilterItems.length) {
+                          setClientFilter(new Set());
+                        } else {
+                          setClientFilter(sel);
+                        }
+                        setPage(1);
+                      }}
+                      sortDirection={clientSortDir}
+                      onSortChange={setClientSortDir}
+                      sortAscLabel="A → Z"
+                      sortDescLabel="Z → A"
+                    >
+                      <span>Requirement &amp; client</span>
+                    </SheetColumnFilter>
+                  </th>
+                  <th className="min-w-[120px]">
+                    <SheetColumnFilter
+                      title="Stage"
+                      items={stageColumnFilterItems}
+                      selectedValues={stageColumnFilter.size === 0 ? new Set(stageColumnFilterItems.map(i => i.value)) : stageColumnFilter}
+                      onSelectionChange={(sel) => {
+                        if (sel.size === stageColumnFilterItems.length) {
+                          setStageColumnFilter(new Set());
+                        } else {
+                          setStageColumnFilter(sel);
+                        }
+                        setPage(1);
+                      }}
+                    >
+                      <span>Submission stage</span>
+                    </SheetColumnFilter>
+                  </th>
+                  <th className="min-w-[130px]">
+                    <SheetColumnFilter
+                      title="Vendor / Source"
+                      items={vendorFilterItems}
+                      selectedValues={vendorColumnFilter.size === 0 ? new Set(vendorFilterItems.map(i => i.value)) : vendorColumnFilter}
+                      onSelectionChange={(sel) => {
+                        if (sel.size === vendorFilterItems.length) {
+                          setVendorColumnFilter(new Set());
+                        } else {
+                          setVendorColumnFilter(sel);
+                        }
+                        setPage(1);
+                      }}
+                    >
+                      <span>Source &amp; vendor</span>
+                    </SheetColumnFilter>
+                  </th>
                   <th className="min-w-[120px]">JD match &amp; gaps</th>
                   <th className="min-w-[140px]">Validation gate &amp; rating</th>
                   <th className="min-w-[95px]">
@@ -1656,24 +1833,34 @@ export const HqSubmissionsPage: React.FC = () => {
                         </div>
                       </td>
                       <td>
-                        <div className="flex flex-col items-start gap-1">
-                          <Badge tone={DECISION_GATE_TONES[validation.decision_gate]}>
-                            {DECISION_GATE_LABELS[validation.decision_gate]}
-                          </Badge>
-                          {avgRating ? (
-                            <span className="text-[12px] font-mono text-[var(--text-secondary)]">
-                              Recruiter rating: <strong>{avgRating}/5.0</strong>
-                            </span>
-                          ) : validation.validation_interview ? (
-                            <span className="text-[12px] font-mono text-[var(--text-tertiary)]">
-                              Interview {validation.validation_interview.status}
-                            </span>
-                          ) : (
-                            <span className="text-[12px] text-[var(--text-tertiary)]">
-                              Not interviewed yet
-                            </span>
-                          )}
-                        </div>
+                        {(() => {
+                          const effectiveDecisionGate: ValidationDecisionStage =
+                            sub.stage === 'rejected'
+                              ? 'rejected'
+                              : sub.stage === 'withdrawn'
+                                ? 'withdrawn'
+                                : validation.decision_gate;
+                          return (
+                            <div className="flex flex-col items-start gap-1">
+                              <Badge tone={DECISION_GATE_TONES[effectiveDecisionGate]}>
+                                {DECISION_GATE_LABELS[effectiveDecisionGate]}
+                              </Badge>
+                              {avgRating ? (
+                                <span className="text-[12px] font-mono text-[var(--text-secondary)]">
+                                  Recruiter rating: <strong>{avgRating}/5.0</strong>
+                                </span>
+                              ) : validation.validation_interview ? (
+                                <span className="text-[12px] font-mono text-[var(--text-tertiary)]">
+                                  Interview {validation.validation_interview.status}
+                                </span>
+                              ) : (
+                                <span className="text-[12px] text-[var(--text-tertiary)]">
+                                  Not interviewed yet
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
                       <td>
                         <AiScoreCell
@@ -1685,7 +1872,7 @@ export const HqSubmissionsPage: React.FC = () => {
                         />
                       </td>
                       <td>
-                        {latestFollowUp ? (
+                        {sub.stage !== 'rejected' && sub.stage !== 'withdrawn' && latestFollowUp ? (
                           <div className="flex flex-col items-start gap-0.5">
                             <Badge
                               tone={

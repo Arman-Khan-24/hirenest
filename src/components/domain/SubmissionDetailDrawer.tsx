@@ -248,6 +248,10 @@ export const SubmissionDetailDrawer: React.FC<{
     queryClient.invalidateQueries({ queryKey: ['submission_validations_vendor'] });
     queryClient.invalidateQueries({ queryKey: ['offers-onboarding-workspace'] });
     queryClient.invalidateQueries({ queryKey: ['my_pending_feedback'] });
+    queryClient.invalidateQueries({ queryKey: ['vendor_req_matches'] });
+    queryClient.invalidateQueries({ queryKey: ['vendor_candidate_matches'] });
+    queryClient.invalidateQueries({ queryKey: ['candidate_matches'] });
+    queryClient.invalidateQueries({ queryKey: ['req_matches'] });
     onUpdated?.();
   };
 
@@ -907,6 +911,22 @@ export const SubmissionDetailDrawer: React.FC<{
         p_to: targetStage,
         p_reason: transitionReason.trim() || null,
       });
+      if (valRecord && (targetStage === 'rejected' || targetStage === 'withdrawn')) {
+        const nextVal: SubmissionValidationRecord = {
+          ...valRecord,
+          validationStage: targetStage,
+          decision_gate: targetStage,
+          followUp: {
+            ...valRecord.followUp,
+            status: 'none',
+          },
+        };
+        await persistValidation(
+          nextVal,
+          `stage_${targetStage}`,
+          `Validation gate changed to ${VALIDATION_STAGE_LABELS[targetStage]}`
+        ).catch(() => {});
+      }
       toast({
         title: 'Stage updated',
         description: `Moved to ${STAGE_LABELS[targetStage]}.`,

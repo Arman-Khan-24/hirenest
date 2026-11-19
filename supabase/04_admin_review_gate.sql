@@ -529,7 +529,7 @@ begin
 
   if v_vendor is not null then
     perform private.notify_org(v_vendor, 'clarification', 'Clarification requested',
-                               'Missing skills follow-up', '/vendor/submissions/' || p_submission_id);
+                               'Missing skills follow-up', '/vendor/submissions?subId=' || p_submission_id);
   end if;
   return v_id;
 end;
@@ -634,7 +634,7 @@ begin
   end if;
   if s.vendor_org_id is not null then
     perform private.notify_org(s.vendor_org_id, 'submission', 'Submission status updated',
-                               r.title || ': ' || p_to::text, '/vendor/submissions/' || s.id);
+                               r.title || ': ' || p_to::text, '/vendor/submissions?subId=' || s.id);
   end if;
 end;
 $$;

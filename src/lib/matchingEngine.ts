@@ -61,6 +61,11 @@ export function formatAtomicSkillLabel(raw: string): string {
     ppqm: 'PPQM',
     hana: 'HANA',
     abap: 'ABAP',
+    vbcs: 'VBCS',
+    oic: 'OIC',
+    erp: 'ERP',
+    hcm: 'HCM',
+    scm: 'SCM',
     etl: 'ETL',
     elt: 'ELT',
     bi: 'BI',
@@ -242,6 +247,10 @@ const JD_SKILL_DETECTORS: Array<{ label: string; pattern: RegExp }> = [
   { label: 'ServiceNow', pattern: /\bservicenow\b/i },
   { label: 'ServiceNow GRC / IRM', pattern: /\bgrc\b|\birm\b|\bgovernance(?:,\s*|\s+and\s+)risk\b/i },
   { label: 'Workday', pattern: /\bworkday\b/i },
+  { label: 'Oracle Fusion', pattern: /\boracle\s+fusion\b/i },
+  { label: 'VBCS', pattern: /\bvbcs\b|\bvisual\s+builder\s+(?:cloud\s+service|studio)?\b/i },
+  { label: 'Oracle Cloud ERP / HCM', pattern: /\boracle\s+cloud\s+(?:erp|hcm|scm|financials)\b/i },
+  { label: 'Oracle Integration Cloud', pattern: /\boracle\s+integration\s+cloud\b|\boic\b/i },
   { label: 'Salesforce', pattern: /\bsalesforce\b|\bsfdc\b/i },
   { label: 'Project Management', pattern: /\bproject\s+manage(?:ment|r)\b|\bpmp\b|\bscrum\b|\bagile\b/i },
   { label: 'Product Management', pattern: /\bproduct\s+manage(?:ment|r)\b/i },
@@ -514,6 +523,29 @@ const SKILL_SYNONYM_CLUSTERS: Array<{
       /\bdata\s+warehous/i,
     ],
     partialEquivalents: [/\bpostgresql\b/i, /\bazure\b/i, /\baws\b/i, /\bgcp\b/i],
+  },
+  {
+    triggers: [
+      /\boracle\s+fusion\b/i,
+      /\bvbcs\b/i,
+      /\bvisual\s+builder\b/i,
+      /\boracle\s+cloud\s+(?:erp|hcm|scm|financia)/i,
+      /\boracle\s+integration\s+cloud\b|\boic\b/i,
+    ],
+    strongEquivalents: [
+      /\boracle\s+fusion\b/i,
+      /\bvbcs\b/i,
+      /\bvisual\s+builder(?:\s+cloud\s+service|\s+studio)?\b/i,
+      /\boracle\s+cloud\s+(?:erp|hcm|scm|infrastructure|financials?)\b/i,
+      /\boracle\s+integration\s+cloud\b|\boic\b/i,
+      /\bfusion\s+(?:technical|functional|developer|consultant)\b/i,
+      /\boracle\s+cloud\s+applications\b/i,
+    ],
+    partialEquivalents: [
+      /\boracle\s+apps\b/i,
+      /\boracle\s+ebs\b/i,
+      /\be-business\s+suite\b/i,
+    ],
   },
 ];
 
@@ -878,6 +910,7 @@ export function extractRequirementAtomicSkills(
 
 /**
  * Evaluates a single atomic JD skill against a candidate's profile signals.
+ * Prioritizes JD-specific skills over generic keywords in resume text.
  * Returns a credit score in [0, 1] and whether it counts as matched/evidenced.
  */
 function evaluateSingleSkillMatch(
@@ -887,24 +920,42 @@ function evaluateSingleSkillMatch(
   const normReq = normalizeText(reqSkill);
   if (!normReq) return { credit: 0, matchedLabel: null };
 
-  // 1. Exact or substring match against candidate's explicit or inferred skills
+  const isCompoundReq = normReq.split(' ').filter(Boolean).length >= 2;
+
+  // 1. Exact or specific match against candidate's explicit or inferred skills
   for (const cSkill of candidateSignals.allSkills) {
     const normCand = normalizeText(cSkill);
     if (!normCand) continue;
     if (normCand === normReq) {
       return { credit: 1.0, matchedLabel: reqSkill };
     }
-    if (
-      (normCand.length >= 3 && normReq.includes(normCand)) ||
-      (normReq.length >= 3 && normCand.includes(normReq))
-    ) {
+    // Candidate has a specific title or skill that contains the full JD skill
+    // e.g., candidate has "Senior Oracle Fusion Developer" -> contains "oracle fusion"
+    if (normReq.length >= 3 && normCand.includes(normReq)) {
       return { credit: 0.94, matchedLabel: reqSkill };
+    }
+    // Requirement contains candidate skill: ONLY allow if candidate skill is NOT just a generic single atom
+    // e.g., candidate having "oracle" must NEVER be credited as matching "oracle fusion"
+    if (normCand.length >= 3 && normReq.includes(normCand)) {
+      if (isCompoundReq) {
+        // If requirement is compound, a shorter candidate skill must match almost the full phrase (>= 80% length)
+        if (normCand.length >= normReq.length * 0.8) {
+          return { credit: 0.85, matchedLabel: reqSkill };
+        }
+        // Otherwise it's only a single sub-token/keyword, NOT a verified match
+      } else {
+        return { credit: 0.94, matchedLabel: reqSkill };
+      }
     }
   }
 
-  // 2. Direct phrase presence in candidate's full resume corpus (summary, title, parsed_data)
-  if (normReq.length >= 3 && candidateSignals.corpusText.includes(normReq)) {
-    return { credit: 0.95, matchedLabel: reqSkill };
+  // 2. Direct phrase presence in candidate's full resume corpus with exact word boundaries
+  if (normReq.length >= 3) {
+    const escapedReq = normReq.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const phraseRegex = new RegExp(`\\b${escapedReq}\\b`, 'i');
+    if (phraseRegex.test(candidateSignals.corpusText)) {
+      return { credit: 0.95, matchedLabel: reqSkill };
+    }
   }
 
   // 3. Domain synonym & ecosystem cluster equivalence
@@ -921,7 +972,8 @@ function evaluateSingleSkillMatch(
         rx.test(candidateSignals.corpusText)
       );
       if (hasPartial) {
-        return { credit: 0.68, matchedLabel: reqSkill };
+        // Partial synonym alone is an adjacent signal; do NOT mark as fully verified match
+        return { credit: 0.35, matchedLabel: null };
       }
     }
   }
@@ -942,8 +994,20 @@ function evaluateSingleSkillMatch(
     }
     if (matchedTokenCount > 0) {
       const ratio = matchedTokenCount / reqTokens.length;
-      const credit = Math.min(0.85, 0.45 + ratio * 0.45);
-      return { credit, matchedLabel: credit >= 0.55 ? reqSkill : null };
+      if (isCompoundReq) {
+        // Compound skills (e.g., "Oracle Fusion", "VBCS Developer") require high token overlap (>= 75%)
+        // Having only "Oracle" for "Oracle Fusion" gives ratio 0.5 -> weak credit, NOT a matched skill
+        if (ratio >= 0.75) {
+          const credit = Math.min(0.80, 0.50 + ratio * 0.30);
+          return { credit, matchedLabel: reqSkill };
+        } else {
+          // Low overlap single-word keyword occurrence: low credit, NEVER marked as matched
+          return { credit: Math.min(0.20, ratio * 0.30), matchedLabel: null };
+        }
+      } else {
+        const credit = Math.min(0.85, 0.45 + ratio * 0.45);
+        return { credit, matchedLabel: credit >= 0.60 ? reqSkill : null };
+      }
     }
   }
 
@@ -1287,6 +1351,19 @@ export function computeFineTunedCandidateMatch(
   // Skill coverage gates the overall score: weak coverage of the defined skills cannot be
   // rescued by experience/seniority alone.
   let cappedScore = Math.min(weightedScore, 35 + skillScore * 0.65);
+
+  // Strict JD Skill Verification Guard:
+  // Prioritizes JD-specific skills over generic resume keywords.
+  // Weak coverage of the defined JD skills cannot be inflated by generic resume history.
+  if (atomicReqSkills.length > 0) {
+    const verifiedRatio = matchedSkills.length / atomicReqSkills.length;
+    if (verifiedRatio < 0.5) {
+      // E.g., if candidate has 0 or few verified JD skills, strictly cap the match score
+      // so candidates lacking core requirements (e.g. Oracle Fusion / VBCS) cannot get 70-85%.
+      const jdSkillCap = Math.max(25, Math.round(verifiedRatio * 60 + 15));
+      cappedScore = Math.min(cappedScore, jdSkillCap);
+    }
+  }
   // An IT candidate must not surface for a non-IT requirement (or vice versa) unless the
   // defined skills are mostly covered.
   const reqCategory = classifyRequirement({

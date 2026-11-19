@@ -37,6 +37,7 @@ export interface RequirementExtendedMeta {
   workingDaysPerMonth?: number | null;
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
+  bgvChecks?: string[];
   paymentTerms?: string | null;
   notes?: string | null;
   joiningTimeline?: string | null;
@@ -51,6 +52,7 @@ export interface RequirementExtras {
   workingDaysPerMonth?: number | null;
   profileType?: RequirementProfileType | null;
   hasBgv?: boolean | null;
+  bgvChecks?: string[];
   paymentTerms?: string | null;
   notes?: string | null;
   joiningTimeline?: string | null;
@@ -487,6 +489,10 @@ export function encodeRequirementMetaToCurrency(params: {
   if (params.hasBgv !== undefined && params.hasBgv !== null) {
     encoded += `|bgv=${params.hasBgv ? '1' : '0'}`;
   }
+  const bgvChecks = (params.bgvChecks || []).map((x) => x.trim()).filter(Boolean);
+  if (bgvChecks.length > 0) {
+    encoded += `|bgvc=${encodeURIComponent(bgvChecks.join(';'))}`;
+  }
   if (params.paymentTerms && params.paymentTerms.trim() !== '') {
     encoded += `|terms=${encodeURIComponent(params.paymentTerms.trim())}`;
   }
@@ -682,6 +688,29 @@ export function parseRequirementMeta(
     }
   }
 
+  let bgvChecks: string[] = [];
+  if (kv.bgvc) {
+    try {
+      bgvChecks = decodeURIComponent(kv.bgvc)
+        .split(';')
+        .map((x) => x.trim())
+        .filter(Boolean);
+    } catch {
+      bgvChecks = [];
+    }
+  }
+
+  const parsedHasBgv =
+    kv.bgv === '1' || kv.bgv === 'true'
+      ? true
+      : kv.bgv === '0' || kv.bgv === 'false'
+        ? false
+        : null;
+
+  if (parsedHasBgv && bgvChecks.length === 0) {
+    bgvChecks = ['Employment History Check', 'Police Clearance Certificate (PCC)'];
+  }
+
   const result: RequirementExtendedMeta = {
     baseCurrency,
     budgetUnit,
@@ -699,12 +728,8 @@ export function parseRequirementMeta(
     profileType: kv.pt === 'bench' || kv.pt === 'market' || kv.pt === 'both' ? kv.pt : null,
     hourlyRate: numOrNull(kv.rate),
     workingDaysPerMonth: numOrNull(kv.days),
-    hasBgv:
-      kv.bgv === '1' || kv.bgv === 'true'
-        ? true
-        : kv.bgv === '0' || kv.bgv === 'false'
-          ? false
-          : null,
+    hasBgv: parsedHasBgv,
+    bgvChecks,
     paymentTerms,
     notes,
     joiningTimeline,

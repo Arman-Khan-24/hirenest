@@ -95,6 +95,7 @@ import {
   parseRequirementMeta,
   type DuplicateRequirementGroup,
 } from '../../lib/enterpriseLifecycle';
+import { getRequirementBgvChecks, formatBgvSummary } from '../../lib/bgv';
 import { mapSupabaseError } from '../../lib/errors';
 import {
   STAGE_LABELS,
@@ -1545,8 +1546,8 @@ export const HqRequirementDetailPage: React.FC = () => {
                   <div className="h-9 w-9 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0 text-sky-600 mt-0.5">
                     <ShieldCheck className="h-5 w-5 stroke-[2.2]" />
                   </div>
-                  <div className="space-y-1 text-[13px]">
-                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                  <div className="space-y-1.5 text-[13px]">
+                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2 flex-wrap">
                       <span>Background Verification (BGV) Mandatory</span>
                       <span className="rounded-full bg-sky-600 text-white text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold">
                         BGV Process
@@ -1554,8 +1555,18 @@ export const HqRequirementDetailPage: React.FC = () => {
                     </div>
                     <p className="text-[var(--text-secondary)] text-[12px] leading-relaxed">
                       This requirement requires a strict <strong>Background Verification (BGV)</strong> process prior to onboarding, including:
-                      <strong> Employment History Check</strong>, <strong>Police Clearance Certificate (PCC)</strong>, and verified in-house bench resource status.
                     </p>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {getRequirementBgvChecks(req).map((check) => (
+                        <span
+                          key={check}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200 border border-sky-300 dark:border-sky-800"
+                        >
+                          <ShieldCheck className="h-3 w-3 shrink-0" />
+                          {check}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -2481,12 +2492,23 @@ export const HqRequirementDetailPage: React.FC = () => {
               </div>
             )}
             {hasBgvRequired(req) && (
-              <div className="py-2 flex justify-between items-center gap-2">
+              <div className="py-2 flex justify-between items-start gap-2">
                 <span className="text-[var(--text-secondary)]">BGV check</span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
-                  <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
-                  Mandatory (PCC + Emp)
-                </span>
+                <div className="text-right space-y-1">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
+                    <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
+                    {formatBgvSummary(getRequirementBgvChecks(req))}
+                  </span>
+                  {getRequirementBgvChecks(req).length > 0 && (
+                    <div className="flex flex-col items-end gap-0.5">
+                      {getRequirementBgvChecks(req).map((check) => (
+                        <span key={check} className="text-[10px] text-sky-700 dark:text-sky-300 font-medium">
+                          · {check}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
             <div className="py-2 flex justify-between gap-2">

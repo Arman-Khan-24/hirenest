@@ -105,6 +105,7 @@ import {
   fetchAllOfferOnboardingRecordsApi,
 } from '../../lib/offerOnboarding';
 import { parseRequirementMeta } from '../../lib/enterpriseLifecycle';
+import { getRequirementBgvChecks, formatBgvSummary } from '../../lib/bgv';
 import { computeFineTunedCandidateMatch } from '../../lib/matchingEngine';
 import { useToast } from '../../components/ui/Toast';
 import type {
@@ -1147,7 +1148,7 @@ export const VendorRequirementDetailPage: React.FC = () => {
               <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
                 {matchesData.data.map((m, idx) => {
                   const alreadySubmitted = mySubmissions.some(
-                    (s) => s.candidate_id === m.candidate_id
+                    (s) => s.candidate_id === m.candidate_id && s.stage !== 'rejected' && s.stage !== 'withdrawn'
                   );
                   return (
                     <div key={m.id} className="py-3 flex flex-col gap-2">
@@ -1265,8 +1266,8 @@ export const VendorRequirementDetailPage: React.FC = () => {
                   <div className="h-9 w-9 rounded-full bg-sky-500/10 flex items-center justify-center shrink-0 text-sky-600 mt-0.5">
                     <ShieldCheck className="h-5 w-5 stroke-[2.2]" />
                   </div>
-                  <div className="space-y-1 text-[13px]">
-                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2">
+                  <div className="space-y-1.5 text-[13px]">
+                    <div className="font-semibold text-[var(--text-primary)] flex items-center gap-2 flex-wrap">
                       <span>Background Verification (BGV) Mandatory</span>
                       <span className="rounded-full bg-sky-600 text-white text-[10px] px-2 py-0.5 uppercase tracking-wider font-bold">
                         BGV Process
@@ -1274,8 +1275,18 @@ export const VendorRequirementDetailPage: React.FC = () => {
                     </div>
                     <p className="text-[var(--text-secondary)] text-[12px] leading-relaxed">
                       This requirement requires a strict <strong>Background Verification (BGV)</strong> process prior to onboarding, including:
-                      <strong> Employment History Check</strong>, <strong>Police Clearance Certificate (PCC)</strong>, and verified in-house bench resource status.
                     </p>
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {getRequirementBgvChecks(req).map((check) => (
+                        <span
+                          key={check}
+                          className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-sky-100 text-sky-900 dark:bg-sky-900/40 dark:text-sky-200 border border-sky-300 dark:border-sky-800"
+                        >
+                          <ShieldCheck className="h-3 w-3 shrink-0" />
+                          {check}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
@@ -1383,11 +1394,22 @@ export const VendorRequirementDetailPage: React.FC = () => {
               </div>
             )}
             {hasBgvRequired(req) && (
-              <div className="py-2 flex justify-between items-center gap-2">
+              <div className="py-2 flex justify-between items-start gap-2">
                 <dt className="text-[12px] text-[var(--text-secondary)]">BGV check</dt>
-                <dd className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
-                  <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
-                  Mandatory (PCC + Emp)
+                <dd className="text-right space-y-1">
+                  <span className="inline-flex items-center gap-1 rounded-full bg-sky-500/10 text-sky-600 px-2.5 py-0.5 text-[11px] font-semibold border border-sky-500/20">
+                    <ShieldCheck className="h-3 w-3 stroke-[2.5]" />
+                    {formatBgvSummary(getRequirementBgvChecks(req))}
+                  </span>
+                  {getRequirementBgvChecks(req).length > 0 && (
+                    <div className="flex flex-col items-end gap-0.5">
+                      {getRequirementBgvChecks(req).map((check) => (
+                        <span key={check} className="text-[10px] text-sky-700 dark:text-sky-300 font-medium">
+                          · {check}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </dd>
               </div>
             )}
@@ -2101,7 +2123,7 @@ export const VendorCandidateDetailPage: React.FC = () => {
                   <div className="divide-y divide-[var(--border)] border-y border-[var(--border)]">
                     {matchesData.data.map((m, idx) => {
                       const existingSub = mySubmissions.find(
-                        (s) => s.requirement_id === m.requirement_id
+                        (s) => s.requirement_id === m.requirement_id && s.stage !== 'rejected' && s.stage !== 'withdrawn'
                       );
                       return (
                         <div key={m.id} className="py-3 flex flex-col gap-2">
@@ -2655,6 +2677,37 @@ export const VendorSubmissionsPage: React.FC = () => {
   });
   const aiSummaries = useAiInterviewSummaries((data?.data || []).map((x) => x.id)).data;
 
+  const subIds = useMemo(() => (data?.data || []).map((x) => x.id), [data?.data]);
+
+  const { data: dbClarifications } = useQuery({
+    queryKey: ['vendor_submission_clarifications', profile?.org_id, subIds.join(',')],
+    queryFn: async () => {
+      if (subIds.length === 0) return [];
+      const { data: rows, error: qErr } = await supabase
+        .from('submission_clarifications')
+        .select('*')
+        .in('submission_id', subIds)
+        .order('created_at', { ascending: false });
+      if (qErr) {
+        console.warn('Failed to fetch submission clarifications', qErr);
+        return [];
+      }
+      return rows || [];
+    },
+    enabled: Boolean(profile?.org_id && subIds.length > 0),
+    refetchInterval: 8000,
+  });
+
+  const clarificationsBySubId = useMemo(() => {
+    const map = new Map<string, { status: string; missing_skills?: string[]; questions?: string }>();
+    for (const c of dbClarifications || []) {
+      if (!map.has(c.submission_id)) {
+        map.set(c.submission_id, c);
+      }
+    }
+    return map;
+  }, [dbClarifications]);
+
   return (
     <div>
       <PageHeader
@@ -2713,7 +2766,18 @@ export const VendorSubmissionsPage: React.FC = () => {
               <tbody>
                 {data.data.map((sub) => {
                   const validation = getOrBuildValidationRecord(sub, null);
-                  const latestFollowUp = validation.follow_up_requests[0];
+                  const dbClarification = clarificationsBySubId.get(sub.id);
+                  const isClarificationPending =
+                    sub.validation_state === 'pending_clarification' ||
+                    dbClarification?.status === 'open' ||
+                    validation.follow_up_requests[0]?.status === 'requested';
+                  const isResponded =
+                    dbClarification?.status === 'responded' ||
+                    validation.follow_up_requests[0]?.status === 'responded';
+                  const isVerified =
+                    dbClarification?.status === 'resolved' ||
+                    validation.follow_up_requests[0]?.status === 'verified';
+
                   return (
                     <tr
                       key={sub.id}
@@ -2737,9 +2801,19 @@ export const VendorSubmissionsPage: React.FC = () => {
                         </Link>
                       </td>
                       <td>
-                        <Badge tone={DECISION_GATE_TONES[validation.decision_gate]}>
-                          {DECISION_GATE_LABELS[validation.decision_gate]}
-                        </Badge>
+                        {(() => {
+                          const effectiveDecisionGate: ValidationDecisionStage =
+                            sub.stage === 'rejected'
+                              ? 'rejected'
+                              : sub.stage === 'withdrawn'
+                                ? 'withdrawn'
+                                : validation.decision_gate;
+                          return (
+                            <Badge tone={DECISION_GATE_TONES[effectiveDecisionGate]}>
+                              {DECISION_GATE_LABELS[effectiveDecisionGate]}
+                            </Badge>
+                          );
+                        })()}
                       </td>
                       <td>
                         <AiScoreCell
@@ -2751,32 +2825,41 @@ export const VendorSubmissionsPage: React.FC = () => {
                         />
                       </td>
                       <td>
-                        {latestFollowUp ? (
+                        {sub.stage === 'rejected' || sub.stage === 'withdrawn' ? (
+                          <span className="text-[12px] text-[var(--text-tertiary)]">-</span>
+                        ) : isClarificationPending ? (
                           <div className="flex items-center gap-1.5">
                             <Badge
-                              tone={
-                                latestFollowUp.status === 'verified'
-                                  ? 'emerald'
-                                  : latestFollowUp.status === 'responded'
-                                    ? 'sky'
-                                    : 'amber'
-                              }
+                              tone="amber"
                               className="cursor-pointer hover:opacity-85 transition-opacity"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setDrawerSubId(sub.id);
-                                setDrawerInitialTab(
-                                  latestFollowUp.status === 'requested' ? 'followup' : 'match_summary'
-                                );
+                                setDrawerInitialTab('followup');
                               }}
                               title="Click to view and respond to clarification request"
                             >
-                              {latestFollowUp.status === 'requested'
-                                ? '• Clarification requested'
-                                : latestFollowUp.status === 'responded'
-                                  ? 'Response submitted'
-                                  : 'Verified'}
+                              • Clarification requested
                             </Badge>
+                          </div>
+                        ) : isResponded ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge
+                              tone="sky"
+                              className="cursor-pointer hover:opacity-85 transition-opacity"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDrawerSubId(sub.id);
+                                setDrawerInitialTab('followup');
+                              }}
+                              title="Clarification response submitted - awaiting recruiter review"
+                            >
+                              Response submitted
+                            </Badge>
+                          </div>
+                        ) : isVerified ? (
+                          <div className="flex items-center gap-1.5">
+                            <Badge tone="emerald">Verified</Badge>
                           </div>
                         ) : (
                           <span className="text-[12px] text-[var(--text-tertiary)]">No pending requests</span>
