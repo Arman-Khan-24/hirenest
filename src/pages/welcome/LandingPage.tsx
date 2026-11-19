@@ -16,6 +16,7 @@ import {
   Database,
   Lock,
   History,
+  Sparkles,
 } from 'lucide-react';
 import {
   submitEarlyAccessApplication,
@@ -492,6 +493,228 @@ function EarlyAccessForm() {
   );
 }
 
+const TRUSTED_VENDORS = [
+  'Bluesand IT Solutions',
+  'Nexzibyte Solutions',
+  'AIMitra',
+  'Federal Soft Systems',
+  'Apex Talent Partners',
+  'Tribirds IT Services',
+  'IceApple Technology Solutions',
+  'Velzo Technologies Pvt Ltd',
+  'Sarathi Nexus',
+  'Codemech Solution',
+  'Anyaccess Technologies India Pvt. Ltd.',
+  'Asridhi Infotech',
+  'CloudNextGen IT Software Solutions',
+  'Cognityhire',
+  'Glimmora International',
+  'JMR Consultancy',
+  'Mathesis Labs',
+  'Mycloudcrew',
+  'Quantum Centric',
+  'Hirety',
+];
+
+const MATCHING_CANDIDATE_SAMPLES = [
+  {
+    role: 'Senior Oracle Cloud ERP / Fusion Architect',
+    matchScore: 94,
+    exp: '8.5 yrs exp',
+    vendor: 'Bluesand IT Solutions',
+    status: 'Client Interview',
+    skills: ['Oracle Fusion', 'Cloud ERP', 'HCM Modules', 'VBCS', 'OIC'],
+  },
+  {
+    role: 'Principal Full Stack Engineer (React & Node)',
+    matchScore: 96,
+    exp: '7.0 yrs exp',
+    vendor: 'Nexzibyte Solutions',
+    status: 'Recruiter Validated',
+    skills: ['React 19', 'TypeScript', 'Node.js', 'PostgreSQL', 'GraphQL'],
+  },
+  {
+    role: 'Lead Cloud DevOps & Infrastructure Engineer',
+    matchScore: 91,
+    exp: '6.5 yrs exp',
+    vendor: 'Federal Soft Systems',
+    status: 'Forwarded to Client',
+    skills: ['AWS', 'Kubernetes', 'Terraform', 'Docker', 'CI/CD Pipelines'],
+  },
+  {
+    role: 'Senior GenAI & Data Platform Engineer',
+    matchScore: 95,
+    exp: '5.5 yrs exp',
+    vendor: 'Apex Talent Partners',
+    status: 'Offer in Progress',
+    skills: ['Python', 'Gemini AI', 'Vector DB', 'PyTorch', 'FastAPI'],
+  },
+];
+
+function VendorTrustSection() {
+  return (
+    <section id="vendors" className="py-20 border-y bg-[var(--zp-canvas)]" style={{ borderColor: LINE }}>
+      <div className="max-w-[1280px] mx-auto px-4 sm:px-6">
+        {/* Header with Badges & Live Metrics */}
+        <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-8 mb-12">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-[12px] font-semibold tracking-wide uppercase mb-3 bg-[#EEF4FF] text-[#1D5FD1] border border-[#BFDBFE]">
+              <Sparkles className="h-3.5 w-3.5 text-[#1D5FD1]" />
+              Network & Matching Powerhouse
+            </div>
+            <h2 className="type-display-lg !text-[clamp(28px,3.2vw,42px)]">
+              Trusted by 25+ Staffing Agencies & 450+ Verified Candidates
+            </h2>
+            <p className="text-[16px] leading-relaxed mt-3 max-w-2xl" style={{ color: INK_SOFT }}>
+              Enterprise requirements routed with zero noise. Staffing vendors compete on transparent SLA timers, composite quality scorecards, and deterministic matching precision across India.
+            </p>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-[var(--zp-canvas-soft)] p-3 rounded-[12px] border shrink-0" style={{ borderColor: LINE }}>
+            <div className="px-3 py-2 text-center border-r" style={{ borderColor: LINE }}>
+              <div className="text-[22px] font-bold font-mono tracking-tight" style={{ color: ACCENT }}>25+</div>
+              <div className="text-[11px] font-medium" style={{ color: INK_FAINT }}>Vendor Agencies</div>
+            </div>
+            <div className="px-3 py-2 text-center sm:border-r" style={{ borderColor: LINE }}>
+              <div className="text-[22px] font-bold font-mono tracking-tight" style={{ color: '#059669' }}>450+</div>
+              <div className="text-[11px] font-medium" style={{ color: INK_FAINT }}>Candidates in Pool</div>
+            </div>
+            <div className="px-3 py-2 text-center border-r" style={{ borderColor: LINE }}>
+              <div className="text-[22px] font-bold font-mono tracking-tight" style={{ color: NAVY }}>92%</div>
+              <div className="text-[11px] font-medium" style={{ color: INK_FAINT }}>Match Precision</div>
+            </div>
+            <div className="px-3 py-2 text-center">
+              <div className="text-[22px] font-bold font-mono tracking-tight" style={{ color: '#D97706' }}>&lt; 48h</div>
+              <div className="text-[11px] font-medium" style={{ color: INK_FAINT }}>Shortlist SLA</div>
+            </div>
+          </div>
+        </div>
+
+        {/* Vendors Marquee / Grid */}
+        <div className="mb-14">
+          <div className="text-[12px] font-mono uppercase tracking-wider mb-4 flex items-center justify-between" style={{ color: INK_FAINT }}>
+            <span className="flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-[#1D5FD1]" />
+              Staffing Agencies on HireNestOS
+            </span>
+            <span className="text-[11px] font-medium hidden sm:inline">Ranked by Composite SLA & Quality</span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2.5">
+            {TRUSTED_VENDORS.map((vendor, i) => (
+              <div
+                key={vendor}
+                className="group flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-[10px] border bg-[var(--zp-canvas)] hover:border-[#1D5FD1] hover:shadow-xs transition-all duration-150"
+                style={{ borderColor: LINE }}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="h-2 w-2 rounded-full bg-[#10B981] shrink-0" />
+                  <span className="text-[13px] font-medium truncate group-hover:text-[#1D5FD1] transition-colors" style={{ color: INK }}>
+                    {vendor}
+                  </span>
+                </div>
+                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[var(--zp-canvas-soft)] text-[#64748B] shrink-0">
+                  #{i + 1}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 450+ Candidates in Matching Style Showcase */}
+        <div className="rounded-[16px] border p-6 sm:p-8 bg-[#F8F9FC]" style={{ borderColor: LINE }}>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 pb-6 border-b" style={{ borderColor: LINE }}>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="relative flex h-2.5 w-2.5">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#10B981] opacity-75" />
+                  <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#10B981]" />
+                </span>
+                <span className="font-mono text-[12px] font-semibold text-[#059669] uppercase tracking-wide">
+                  Live Fitment Engine
+                </span>
+              </div>
+              <h3 className="text-[20px] font-bold tracking-tight mt-1" style={{ color: INK }}>
+                Real-Time Candidate Matching Stream
+              </h3>
+              <p className="text-[13px] mt-0.5" style={{ color: INK_SOFT }}>
+                450+ profiles actively scored across skill overlap, domain depth, seniority, and SLA readiness.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 text-[12px] font-mono" style={{ color: INK_FAINT }}>
+              <span className="inline-block px-2.5 py-1 rounded-md bg-white border font-semibold shadow-xs" style={{ borderColor: LINE, color: INK }}>
+                SHA-256 De-duplicated
+              </span>
+              <span className="inline-block px-2.5 py-1 rounded-md bg-white border font-semibold shadow-xs" style={{ borderColor: LINE, color: '#1D5FD1' }}>
+                BGV Verified
+              </span>
+            </div>
+          </div>
+
+          {/* Candidate Match Cards Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {MATCHING_CANDIDATE_SAMPLES.map((cand) => (
+              <div
+                key={cand.role}
+                className="rounded-[12px] border bg-white p-5 shadow-xs hover:border-[#1D5FD1] transition-all hover:shadow-md"
+                style={{ borderColor: LINE }}
+              >
+                <div className="flex items-start justify-between gap-3 mb-3">
+                  <div>
+                    <h4 className="font-semibold text-[15px] leading-snug" style={{ color: INK }}>
+                      {cand.role}
+                    </h4>
+                    <div className="flex items-center gap-2 text-[12px] mt-1" style={{ color: INK_FAINT }}>
+                      <span>{cand.exp}</span>
+                      <span>•</span>
+                      <span className="font-medium text-[#1D5FD1]">via {cand.vendor}</span>
+                    </div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="inline-flex items-center px-2.5 py-1 rounded-full text-[13px] font-bold font-mono bg-[#ECFDF5] text-[#047857] border border-[#A7F3D0]">
+                      {cand.matchScore}% Match
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap gap-1.5 mt-3 pt-3 border-t" style={{ borderColor: LINE_SOFT }}>
+                  {cand.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded bg-[#F1F5F9] text-[#334155]"
+                    >
+                      <Check className="h-3 w-3 text-[#059669]" />
+                      {skill}
+                    </span>
+                  ))}
+                  <span className="inline-flex items-center text-[11px] font-mono px-2 py-0.5 rounded bg-[#EFF6FF] text-[#1D5FD1] ml-auto">
+                    {cand.status}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-6 pt-4 border-t flex flex-col sm:flex-row items-center justify-between gap-3 text-[12px]" style={{ borderColor: LINE, color: INK_SOFT }}>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#059669]" />
+              <span>Full compliance with candidate privacy and vendor ownership protections under DPDP 2023.</span>
+            </div>
+            <Link
+              to="/jobs"
+              className="inline-flex items-center gap-1 font-semibold text-[#1D5FD1] hover:underline"
+            >
+              Browse Public Openings <ArrowRight className="h-3.5 w-3.5" />
+            </Link>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export const LandingPage: React.FC = () => {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -518,6 +741,9 @@ export const LandingPage: React.FC = () => {
               </div>
             </div>
             <nav className="hidden md:flex items-center gap-1 text-[15px] font-medium" style={{ color: INK }}>
+              <a href="#vendors" className="px-3 py-2 rounded-[8px] hover:bg-[var(--zp-canvas-soft)] transition-colors" style={{ color: 'inherit' }}>
+                Vendors & Matching
+              </a>
               <a href="#platform" className="px-3 py-2 rounded-[8px] hover:bg-[var(--zp-canvas-soft)] transition-colors" style={{ color: 'inherit' }}>
                 Platform
               </a>
@@ -561,6 +787,7 @@ export const LandingPage: React.FC = () => {
         {/* Mobile menu */}
         {mobileMenuOpen && (
           <div className="md:hidden border-t px-4 py-4 space-y-1 bg-[var(--zp-canvas)]" style={{ borderColor: LINE_SOFT }}>
+            <a href="#vendors" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-[14px] font-medium transition-colors" style={{ color: INK_SOFT }}>Vendors & Matching</a>
             <a href="#platform" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-[14px] font-medium transition-colors" style={{ color: INK_SOFT }}>Platform</a>
             <a href="#pipeline" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-[14px] font-medium transition-colors" style={{ color: INK_SOFT }}>Pipeline</a>
             <Link to="/jobs" onClick={() => setMobileMenuOpen(false)} className="block py-2.5 text-[14px] font-medium transition-colors" style={{ color: INK_SOFT }}>Jobs</Link>
@@ -580,6 +807,9 @@ export const LandingPage: React.FC = () => {
       </header>
 
       <HeroSection />
+
+      {/* Trusted by 25+ Staffing Agencies & 450+ Candidates in Matching Style */}
+      <VendorTrustSection />
 
       {/* Platform, grouped by the role it serves — an editorial list, not a bento grid */}
       <section id="platform" className="py-20 sm:py-28 bg-[var(--zp-canvas)]">
