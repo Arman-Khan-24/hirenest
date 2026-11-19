@@ -423,42 +423,50 @@ export async function notifyCandidateSubmittedToClient(
   admin: SupabaseClient,
   submissionId: string
 ): Promise<void> {
+  const { data: sub, error: subErr } = await admin
+    .from('submissions')
+    .select('id, candidate_id, requirement_id, vendor_org_id, notes, stage')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (subErr || !sub) {
+    console.error('[notifyCandidateSubmittedToClient] Sub query error:', subErr);
+    return;
+  }
+
   if (!(await claim(admin, `sub_client:${submissionId}`))) {
     return;
   }
 
-  const { data: sub } = await admin
-    .from('submissions')
-    .select(`
-      id,
-      candidate_id,
-      requirement_id,
-      vendor_org_id,
-      notes,
-      stage,
-      candidates:candidate_id(id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id),
-      requirements:requirement_id(id, title, client_org_id, location, work_mode, skills, organizations:client_org_id(id, name)),
-      vendor_org:vendor_org_id(id, name)
-    `)
-    .eq('id', submissionId)
+  const { data: candidate } = await admin
+    .from('candidates')
+    .select('id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id')
+    .eq('id', sub.candidate_id)
     .maybeSingle();
 
-  if (!sub) return;
+  const { data: requirement } = await admin
+    .from('requirements')
+    .select('id, title, client_org_id, location, work_mode, skills')
+    .eq('id', sub.requirement_id)
+    .maybeSingle();
 
-  const candidate = (sub.candidates as any);
-  const requirement = (sub.requirements as any);
   const candidateName = candidate?.full_name || 'Candidate';
   const reqTitle = requirement?.title || 'Requirement';
-  const clientName = requirement?.organizations?.name || 'Client';
   const clientOrgId = requirement?.client_org_id;
 
   // Resolve vendor name
-  let vendorName = (sub.vendor_org as any)?.name;
-  if (!vendorName && candidate?.owner_vendor_org_id) {
-    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', candidate.owner_vendor_org_id).maybeSingle();
-    vendorName = vOrg?.name;
+  let vendorName = 'HireNest Partner';
+  const vId = sub.vendor_org_id || candidate?.owner_vendor_org_id || candidate?.source_vendor_org_id;
+  if (vId) {
+    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', vId).maybeSingle();
+    if (vOrg?.name) vendorName = vOrg.name;
   }
-  if (!vendorName) vendorName = 'HireNest Partner';
+
+  let clientName = 'Client';
+  if (clientOrgId) {
+    const { data: cOrg } = await admin.from('organizations').select('name').eq('id', clientOrgId).maybeSingle();
+    if (cOrg?.name) clientName = cOrg.name;
+  }
 
   // Query matching score from candidate_matches
   const { data: match } = await admin
@@ -567,45 +575,56 @@ export async function notifyCandidateSubmitted(
   admin: SupabaseClient,
   submissionId: string
 ): Promise<boolean> {
-  // Idempotency: prevent sending twice for the same submission
+  // Query submission directly without complex relation embeds
+  const { data: sub, error: subErr } = await admin
+    .from('submissions')
+    .select('id, candidate_id, requirement_id, vendor_org_id, submitted_by, notes, stage, created_at')
+    .eq('id', submissionId)
+    .maybeSingle();
+
+  if (subErr || !sub) {
+    console.error('[notifyCandidateSubmitted] Sub query error:', subErr);
+    return false;
+  }
+
+  // Idempotency: prevent sending duplicate emails for the same submission
   if (!(await claim(admin, `sub_submitted:${submissionId}`))) {
     return false;
   }
 
-  const { data: sub, error } = await admin
-    .from('submissions')
-    .select(`
-      id,
-      candidate_id,
-      requirement_id,
-      vendor_org_id,
-      submitted_by,
-      notes,
-      stage,
-      created_at,
-      candidates:candidate_id(id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id),
-      requirements:requirement_id(id, title, client_org_id, location, work_mode, skills, organizations:client_org_id(id, name)),
-      vendor_org:vendor_org_id(id, name),
-      submitter:submitted_by(id, full_name, email)
-    `)
-    .eq('id', submissionId)
+  const { data: candidate } = await admin
+    .from('candidates')
+    .select('id, full_name, current_title, total_experience_years, skills, owner_vendor_org_id, source_vendor_org_id')
+    .eq('id', sub.candidate_id)
     .maybeSingle();
 
-  if (error || !sub) return false;
+  const { data: requirement } = await admin
+    .from('requirements')
+    .select('id, title, client_org_id, location, work_mode, skills')
+    .eq('id', sub.requirement_id)
+    .maybeSingle();
 
-  const candidate = (sub.candidates as any);
-  const requirement = (sub.requirements as any);
   const candidateName = candidate?.full_name || 'Candidate';
   const reqTitle = requirement?.title || 'Requirement';
-  const clientName = requirement?.organizations?.name || 'Client';
 
   // Resolve vendor name
-  let vendorName = (sub.vendor_org as any)?.name;
-  if (!vendorName && candidate?.owner_vendor_org_id) {
-    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', candidate.owner_vendor_org_id).maybeSingle();
-    vendorName = vOrg?.name;
+  let vendorName = 'Vendor Partner';
+  const vId = sub.vendor_org_id || candidate?.owner_vendor_org_id || candidate?.source_vendor_org_id;
+  if (vId) {
+    const { data: vOrg } = await admin.from('organizations').select('name').eq('id', vId).maybeSingle();
+    if (vOrg?.name) vendorName = vOrg.name;
   }
-  if (!vendorName) vendorName = (sub.submitter as any)?.full_name || 'Direct / Partner';
+
+  let clientName = 'Client';
+  if (requirement?.client_org_id) {
+    const { data: cOrg } = await admin.from('organizations').select('name').eq('id', requirement.client_org_id).maybeSingle();
+    if (cOrg?.name) clientName = cOrg.name;
+  }
+
+  if (sub.submitted_by && vendorName === 'Vendor Partner') {
+    const { data: prof } = await admin.from('profiles').select('full_name, email').eq('id', sub.submitted_by).maybeSingle();
+    if (prof?.full_name) vendorName = prof.full_name;
+  }
 
   // Query matching score from candidate_matches
   const { data: match } = await admin
@@ -709,7 +728,15 @@ export async function notifyCandidateSubmitted(
 
   const subject = `New Candidate Submission: ${candidateName} by ${vendorName} for ${reqTitle}${matchScore !== null ? ` (${matchScore}% Match)` : ''}`;
 
-  await sendEmail(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  if (!sendResult.ok) {
+    console.error(`[notifyCandidateSubmitted] Email sending failed (${sendResult.channel}):`, sendResult.error);
+    // Release claim so it can retry
+    await admin.from('alert_log').delete().eq('dedupe_key', `sub_submitted:${submissionId}`);
+    return false;
+  }
+
+  console.log(`[notifyCandidateSubmitted] Email successfully dispatched to ${emails.join(', ')}`);
   return true;
 }
 
