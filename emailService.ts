@@ -133,11 +133,20 @@ export async function sendNotificationViaResend(params: {
     };
   }
 
-  const from =
+  let from =
     process.env.RESEND_NOTIFY_FROM ||
     process.env.RESEND_FROM_EMAIL ||
-    process.env.RESEND_INVITE_FROM ||
-    'HireNest <notifications@hirenestworkforce.com>';
+    'HireNest Operations <notifications@hirenestworkforce.com>';
+
+  if (params.from === 'gopal' || params.from === 'gopal@hirenestworkforce.com') {
+    from = 'Gopal · HireNest <gopal@hirenestworkforce.com>';
+  } else if (params.from === 'praveen' || params.from === 'praveen@hirenestworkforce.com') {
+    from = 'Praveen · HireNest <praveen@hirenestworkforce.com>';
+  } else if (params.from === 'admin' || params.from === 'admin@hirenestworkforce.com') {
+    from = 'HireNest Admin <admin@hirenestworkforce.com>';
+  } else if (params.from && params.from.includes('@')) {
+    from = params.from.includes('<') ? params.from : `HireNest <${params.from}>`;
+  }
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
