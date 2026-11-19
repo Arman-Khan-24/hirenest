@@ -94,6 +94,7 @@ import {
   OnboardedCandidatesPage,
 } from './pages/offers/OffersAndOnboardingPages';
 import { DealRoomsListPage } from './pages/dealroom/DealRoomPages';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -347,7 +348,9 @@ function AppRoutes() {
         />
       </Route>
 
-      {/* Candidate Workspace (/candidate/*) */}
+      {/* Candidate Workspace (/candidate/*) and plural aliases */}
+      <Route path="/candidates" element={<Navigate to="/candidate" replace />} />
+      <Route path="/candidates/*" element={<Navigate to="/candidate" replace />} />
       <Route
         path="/candidate"
         element={
@@ -377,7 +380,9 @@ export default function App() {
       <ToastProvider>
         <AuthProvider>
           <BrowserRouter>
-            <AppRoutes />
+            <ErrorBoundary>
+              <AppRoutes />
+            </ErrorBoundary>
           </BrowserRouter>
         </AuthProvider>
       </ToastProvider>

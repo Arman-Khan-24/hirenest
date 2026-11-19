@@ -172,6 +172,7 @@ export const CandidateJobsForMePage: React.FC = () => {
   const candCategory = classifyCandidate(myCandidate);
   const candidatePd = (myCandidate?.parsed_data || {}) as Record<string, unknown>;
   const openToContract = Boolean(candidatePd.open_to_contract);
+  const candidateSkills = Array.isArray(myCandidate?.skills) ? myCandidate.skills : [];
 
   const eligibleMatches = useMemo(() => {
     const list = matchesData?.data ? [...matchesData.data] : [];
@@ -214,12 +215,12 @@ export const CandidateJobsForMePage: React.FC = () => {
 
   // Profile completeness: real signal from fields actually captured on the candidate record.
   const completenessFields: Array<[string, boolean]> = [
-    ['Experience', Boolean(myCandidate.total_experience_years)],
-    ['Current title', Boolean(myCandidate.current_title)],
-    ['Location', Boolean(myCandidate.location)],
-    ['Skills', myCandidate.skills.length > 0],
-    ['Summary', Boolean(myCandidate.summary)],
-    ['Resume', Boolean(myCandidate.resume_path)],
+    ['Experience', Boolean(myCandidate?.total_experience_years)],
+    ['Current title', Boolean(myCandidate?.current_title)],
+    ['Location', Boolean(myCandidate?.location)],
+    ['Skills', candidateSkills.length > 0],
+    ['Summary', Boolean(myCandidate?.summary)],
+    ['Resume', Boolean(myCandidate?.resume_path)],
   ];
   const completenessPct = Math.round(
     (completenessFields.filter(([, ok]) => ok).length / completenessFields.length) * 100
@@ -259,7 +260,7 @@ export const CandidateJobsForMePage: React.FC = () => {
 
       {loadingMatches ? (
         <TableSkeleton rows={5} cols={4} />
-      ) : !matchesData?.data.length ? (
+      ) : !matchesData?.data?.length ? (
         <EmptyState
           title="No matched jobs yet"
           description="Update your skills on My profile or browse all open jobs."
@@ -442,7 +443,7 @@ export const CandidateJobsForMePage: React.FC = () => {
 
           <Pagination
             page={page}
-            totalCount={matchesData.count}
+            totalCount={matchesData?.count ?? 0}
             onPageChange={setPage}
           />
         </div>
@@ -454,15 +455,15 @@ export const CandidateJobsForMePage: React.FC = () => {
                 Candidate profile
               </span>
               <span className="font-mono text-[11px] text-[var(--sidebar-muted)]">
-                #{myCandidate.id.slice(0, 8).toUpperCase()}
+                #{myCandidate?.id ? myCandidate.id.slice(0, 8).toUpperCase() : 'PROFILE'}
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <Avatar name={myCandidate.full_name} />
+              <Avatar name={myCandidate?.full_name || 'Candidate'} />
               <div className="min-w-0">
-                <p className="text-[14px] font-medium truncate">{myCandidate.full_name}</p>
+                <p className="text-[14px] font-medium truncate">{myCandidate?.full_name || 'Candidate'}</p>
                 <p className="text-[12px] text-[var(--sidebar-muted)] truncate">
-                  {myCandidate.current_title || 'Title not set'}
+                  {myCandidate?.current_title || 'Title not set'}
                 </p>
               </div>
             </div>
@@ -491,14 +492,14 @@ export const CandidateJobsForMePage: React.FC = () => {
                     {topMatch.requirements?.title || 'Open job'}
                   </span>
                   <span className="font-mono tabular-nums text-[13px] shrink-0">
-                    {Math.round(topMatch.final_score)}%
+                    {Math.round(Number(topMatch.final_score || 0))}%
                   </span>
                 </div>
               </div>
             )}
             <div className="pt-2 border-t border-white/10 flex items-center justify-between text-[11px] text-[var(--sidebar-muted)]">
               <span>{sortedMatches.length} ranked job{sortedMatches.length === 1 ? '' : 's'}</span>
-              <span>Profile updated {formatRelativeTime(myCandidate.updated_at)}</span>
+              <span>Profile updated {formatRelativeTime(myCandidate?.updated_at)}</span>
             </div>
           </div>
 
@@ -520,11 +521,11 @@ export const CandidateJobsForMePage: React.FC = () => {
             </div>
           </div>
 
-          {myCandidate.skills.length > 0 && (
+          {candidateSkills.length > 0 && (
             <div className="rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-4 space-y-2">
               <p className="text-[13px] font-medium text-[var(--text-primary)]">Your tracked skills</p>
               <div className="flex flex-wrap gap-1.5">
-                {myCandidate.skills.slice(0, 12).map((skill) => (
+                {candidateSkills.slice(0, 12).map((skill) => (
                   <span
                     key={skill}
                     className="px-2 py-0.5 text-[11px] font-mono rounded bg-[var(--bg-subtle)] text-[var(--text-secondary)] border border-[var(--border)]"

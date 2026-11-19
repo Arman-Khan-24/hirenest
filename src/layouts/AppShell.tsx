@@ -47,6 +47,7 @@ import { fetchMyPendingFeedback } from '../api/interviews';
 import { fetchSubscriptionDashboard } from '../api/subscriptions';
 import { fetchRequirements, syncAllOpenRequirementsWithVendors } from '../api/requirements';
 import { ROLE_LABELS, formatRelativeTime } from '../lib/format';
+import { ErrorBoundary } from '../components/common/ErrorBoundary';
 import { AiAssistantDrawer } from '../components/domain/AiAssistantDrawer';
 import { Avatar } from '../components/ui/kit';
 import type { AppRole } from '../types/db';
@@ -119,6 +120,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
   const [aiDrawerOpen, setAiDrawerOpen] = useState(false);
   const [globalSearch, setGlobalSearch] = useState('');
   const [darkMode, setDarkMode] = useState<boolean>(() => {
+    if (typeof document === 'undefined') return false;
     return document.documentElement.classList.contains('dark');
   });
 
@@ -899,7 +901,9 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
 
         {/* Content canvas: responsive fluid canvas up to 1720px */}
         <main className="flex-1 py-6 px-4 sm:px-8 max-w-[1720px] w-full mx-auto space-y-6">
-          {children}
+          <ErrorBoundary scope="workspace content">
+            {children}
+          </ErrorBoundary>
         </main>
 
         {/* Workspace Footer */}
