@@ -798,7 +798,7 @@ export async function notifyRequirementAcknowledged(
   // Fetch requirement details
   const { data: req, error: reqErr } = await admin
     .from('requirements')
-    .select('id, title, client_org_id, role_type, location_city, experience_min, experience_max')
+    .select('id, title, client_org_id, location, work_mode, min_experience, max_experience')
     .eq('id', requirementId)
     .maybeSingle();
 

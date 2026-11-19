@@ -2411,7 +2411,7 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     });
   });
 
-  app.post('/api/requirements/acknowledge', (req, res) => {
+  app.post('/api/requirements/acknowledge', async (req, res) => {
     const {
       requirementId,
       vendorOrgId,
@@ -2434,11 +2434,12 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     enterpriseStore.vendorAcknowledgements[ackKey] = nowIso;
     saveEnterpriseStore(enterpriseStore);
 
+    let notified = false;
     const admin = getSupabaseAdmin();
     if (admin) {
       // Ensure DB record is also updated in case RPC wasn't executed
       if (vendorOrgId && vendorOrgId !== 'default_vendor') {
-        admin
+        await admin
           .from('requirement_vendor_shares')
           .update({
             acknowledged_at: nowIso,
@@ -2447,23 +2448,24 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
           .eq('requirement_id', requirementId)
           .eq('vendor_org_id', vendorOrgId)
           .is('acknowledged_at', null)
-          .then(() => undefined)
           .catch(() => undefined);
       }
 
-      // Trigger instant HQ in-app notification & alert email
-      void notifyRequirementAcknowledged(
-        admin,
-        requirementId,
-        vendorOrgId,
-        acknowledgedByUserId,
-        { acknowledgedByName, acknowledgedByEmail }
-      ).catch((e) => {
+      // Trigger instant HQ in-app notification & alert email (awaited so serverless execution does not terminate early)
+      try {
+        notified = await notifyRequirementAcknowledged(
+          admin,
+          requirementId,
+          vendorOrgId,
+          acknowledgedByUserId,
+          { acknowledgedByName, acknowledgedByEmail }
+        );
+      } catch (e) {
         console.warn('[api/requirements/acknowledge] notify error:', e instanceof Error ? e.message : e);
-      });
+      }
     }
 
-    res.json({ ok: true, acknowledgedAt: nowIso });
+    res.json({ ok: true, acknowledgedAt: nowIso, notified });
   });
 
   // 7-Step Requirement Sharing & Response Tracking Ledger API
