@@ -52,15 +52,8 @@ export const StageBadge: React.FC<{
   stage: SubmissionStage;
   candidateView?: boolean;
   vendorView?: boolean;
-}> = ({ stage, candidateView = false, vendorView = false }) => {
-  let label = candidateView ? CANDIDATE_STAGE_LABELS[stage] : STAGE_LABELS[stage];
-  if (vendorView) {
-    if (stage === 'client_review' || stage === 'interviewing') {
-      label = 'Submitted to Client';
-    } else if (stage === 'offered' || stage === 'offer_accepted' || stage === 'onboarded') {
-      label = 'Client Processing';
-    }
-  }
+}> = ({ stage, candidateView = false }) => {
+  const label = candidateView ? CANDIDATE_STAGE_LABELS[stage] : STAGE_LABELS[stage];
   const toneMap: Record<SubmissionStage, BadgeTone> = {
     applied: 'neutral',
     recruiter_review: 'storm_blue',
@@ -73,16 +66,7 @@ export const StageBadge: React.FC<{
     withdrawn: 'neutral',
     rejected: 'danger',
   };
-  const tone =
-    vendorView &&
-    (stage === 'client_review' ||
-      stage === 'interviewing' ||
-      stage === 'offered' ||
-      stage === 'offer_accepted' ||
-      stage === 'onboarded')
-      ? 'rich_blue'
-      : toneMap[stage] || 'neutral';
-  return <Badge tone={tone}>{label}</Badge>;
+  return <Badge tone={toneMap[stage] || 'neutral'}>{label}</Badge>;
 };
 
 export const RequirementStatusBadge: React.FC<{

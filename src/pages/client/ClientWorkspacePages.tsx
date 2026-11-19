@@ -1230,10 +1230,11 @@ export const ClientCandidatesReviewPage: React.FC = () => {
                       · Requirement:{' '}
                       <Link
                         to={`/client/requirements/${sub.requirement_id}`}
-                        className="text-[var(--text-primary)] font-medium hover:text-[var(--accent)] hover:underline"
+                        className="text-[var(--text-primary)] font-medium hover:text-[var(--accent)] hover:underline inline-flex items-center gap-2"
                         title={`Open requirement details: ${sub.requirements?.title || sub.requirement_id}`}
                       >
-                        {sub.requirements?.title || sub.requirement_id}
+                        {sub.requirements && <RequirementRibbon requirement={sub.requirements} />}
+                        <span>{sub.requirements?.title || sub.requirement_id}</span>
                       </Link>
                     </p>
                   </div>

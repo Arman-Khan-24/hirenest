@@ -8,6 +8,7 @@ type Props = {
     skills?: string[] | null;
     description?: string | null;
     currency?: string | null;
+    status?: string | null;
   };
   className?: string;
 };
@@ -69,6 +70,26 @@ export function RequirementRibbon({ requirement, className = '' }: Props) {
       >
         {REQUIREMENT_CATEGORY_LABEL[category]}
       </span>
+      {requirement.status && (
+        <span
+          title={`Requirement is ${requirement.status === 'open' ? 'Active & Open for submissions' : requirement.status}`}
+          className="inline-flex items-center h-[18px] px-2 mb-1 rounded-[3px] whitespace-nowrap shrink-0 text-[10px] leading-[18px] font-bold uppercase tracking-[0.08em] text-white"
+          style={{
+            background:
+              requirement.status === 'open'
+                ? '#059669'
+                : requirement.status === 'on_hold'
+                  ? '#D97706'
+                  : '#475569',
+          }}
+        >
+          {requirement.status === 'open'
+            ? '● Active'
+            : requirement.status === 'on_hold'
+              ? 'On Hold'
+              : 'Closed'}
+        </span>
+      )}
       {profiles.map((profile) => (
         <span
           key={profile}

@@ -37,6 +37,7 @@ import { AiScoreCell, AiScoreHeader, useAiInterviewSummaries } from '../../compo
 import { aiInterviewApi } from '../../api/aiInterviews';
 import { FitmentScoreCard } from '../../components/domain/FitmentScoreCard';
 import { CandidateFormModal } from '../../components/domain/CandidateFormModal';
+import { RequirementRibbon } from '../../components/domain/RequirementRibbon';
 import { SubmissionDetailDrawer } from '../../components/domain/SubmissionDetailDrawer';
 import { createDealRoom } from '../../api/dealRoom';
 import { InterviewFeedbackModal } from '../../components/domain/InterviewModals';
@@ -937,7 +938,8 @@ export const HqCandidateDetailPage: React.FC = () => {
                           className="cursor-pointer"
                         >
                           <td className="font-medium">
-                            {s.requirements?.title || s.requirement_id}
+                            {s.requirements && <RequirementRibbon requirement={s.requirements} />}
+                            <div className="truncate max-w-[320px]">{s.requirements?.title || s.requirement_id}</div>
                           </td>
                           <td>
                             <SourceBadge source={s.source} vendorName={s.organizations?.name} />

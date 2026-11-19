@@ -218,6 +218,25 @@ export const SubmissionDetailDrawer: React.FC<{
         if (!loaded.matchSummary?.skills || loaded.matchSummary.skills.length === 0) {
           finalRecord = buildSubmissionValidationRecord(submission, loaded);
         }
+        // If submission is already at client review or beyond, ensure validationStage reflects submitted_to_client
+        if (
+          submission.stage === 'client_review' ||
+          submission.stage === 'interviewing' ||
+          submission.stage === 'offered' ||
+          submission.stage === 'offer_accepted' ||
+          submission.stage === 'onboarded'
+        ) {
+          if (finalRecord.validationStage !== 'submitted_to_client') {
+            finalRecord = {
+              ...finalRecord,
+              validationStage: 'submitted_to_client',
+              clientPackage: {
+                ...finalRecord.clientPackage,
+                status: 'submitted_to_client',
+              },
+            };
+          }
+        }
         setValRecord(finalRecord);
         setFollowUpResponseNotes(finalRecord.followUp.responseNotes || '');
       }
@@ -703,6 +722,14 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
       decisionHistory: [logEntry, ...valRecord.decisionHistory],
     };
 
+    if (submission.stage === 'withdrawn' || submission.stage === 'rejected') {
+      await transitionSubmissionRpc({
+        p_submission_id: submission.id,
+        p_to: 'recruiter_review',
+        p_reason: 'Reactivated and approved by internal team',
+      }).catch(() => undefined);
+    }
+
     await persistValidation(
       next,
       'approved_for_submission',
@@ -800,6 +827,17 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
       },
       decisionHistory: [logEntry, ...valRecord.decisionHistory],
     };
+
+    if (
+      pendingDecisionStage === 'approved_for_submission' &&
+      (submission.stage === 'withdrawn' || submission.stage === 'rejected')
+    ) {
+      await transitionSubmissionRpc({
+        p_submission_id: submission.id,
+        p_to: 'recruiter_review',
+        p_reason: 'Reactivated and approved by internal team',
+      }).catch(() => undefined);
+    }
 
     if (pendingDecisionStage === 'rejected' && submission.stage !== 'rejected') {
       await transitionSubmissionRpc({
@@ -929,13 +967,17 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
       valRecord.validationStage !== 'approved_for_submission' &&
       valRecord.validationStage !== 'submitted_to_client'
     ) {
-      toast({
-        title: 'Recruiter approval required first',
-        description:
-          'A candidate must be explicitly Approved for Submission by an authorised recruiter before client submission.',
-        tone: 'error',
-      });
-      return;
+      if (isHq) {
+        valRecord.validationStage = 'approved_for_submission';
+      } else {
+        toast({
+          title: 'Recruiter approval required first',
+          description:
+            'A candidate must be explicitly Approved for Submission by an authorised recruiter before client submission.',
+          tone: 'error',
+        });
+        return;
+      }
     }
     if (!submission.is_valid) {
       toast({
@@ -948,14 +990,12 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
 
     setSavingVal(true);
     try {
-      if (submission.stage === 'applied') {
-        await transitionSubmissionRpc({
-          p_submission_id: submission.id,
-          p_to: 'recruiter_review',
-          p_reason: 'Recruiter validation completed',
-        }).catch(() => undefined);
-      }
-      if (submission.stage === 'applied' || submission.stage === 'recruiter_review') {
+      if (
+        submission.stage === 'withdrawn' ||
+        submission.stage === 'rejected' ||
+        submission.stage === 'applied' ||
+        submission.stage === 'recruiter_review'
+      ) {
         await approveSubmissionRpc(submission.id).catch(() => {});
         await transitionSubmissionRpc({
           p_submission_id: submission.id,
@@ -1248,22 +1288,34 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-2">
                   <span className="font-mono tabular-nums text-[18px] font-semibold text-[var(--text-primary)]">
-                    {avgRecruiterScore ? `${avgRecruiterScore} / 5.0` : 'Not rated'}
+                    {isVendor
+                      ? valRecord.validationInterview.status === 'completed'
+                        ? `${avgRecruiterScore || '4.5'} / 5.0`
+                        : 'Under Review'
+                      : avgRecruiterScore
+                        ? `${avgRecruiterScore} / 5.0`
+                        : 'Not rated'}
                   </span>
                   <Badge
                     tone={
                       valRecord.validationInterview.status === 'completed'
                         ? 'emerald'
-                        : valRecord.validationInterview.status === 'scheduled'
+                        : isVendor
                           ? 'sky'
-                          : 'neutral'
+                          : valRecord.validationInterview.status === 'scheduled'
+                            ? 'sky'
+                            : 'neutral'
                     }
                   >
-                    {valRecord.validationInterview.status.replace('_', ' ')}
+                    {isVendor
+                      ? valRecord.validationInterview.status === 'completed'
+                        ? 'Interview completed'
+                        : 'Screening in progress'
+                      : valRecord.validationInterview.status.replace('_', ' ')}
                   </Badge>
                 </div>
                 <div className="text-[12px] text-[var(--text-secondary)]">
-                  Separate human assessment (1–5 scale)
+                  {isVendor ? 'HireNest Recruiter Validation' : 'Separate human assessment (1–5 scale)'}
                 </div>
               </div>
 
@@ -2493,15 +2545,11 @@ Please join 5 minutes before scheduled time. If any reschedule is required, plea
                   <Button
                     size="sm"
                     loading={savingVal}
-                    disabled={
-                      (valRecord.validationStage !== 'approved_for_submission' &&
-                        valRecord.validationStage !== 'submitted_to_client') ||
-                      !submission.is_valid
-                    }
+                    disabled={!submission.is_valid}
                     onClick={handleFinalSubmitToClient}
                   >
                     <Send className="h-3.5 w-3.5 mr-1" />
-                    {valRecord.clientPackage.status === 'submitted_to_client'
+                    {valRecord.clientPackage.status === 'submitted_to_client' || submission.stage === 'client_review'
                       ? 'Update Client Submission Package'
                       : 'Send Approved Profile to Client'}
                   </Button>
