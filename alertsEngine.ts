@@ -30,7 +30,7 @@ export async function sendEmailResult(
     to,
     subject,
     html,
-    from: from || 'admin@hirenestworkforce.com',
+    from: from || 'gopal@hirenestworkforce.com',
   });
   return { ok: res.ok, error: res.error };
 }
