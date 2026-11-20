@@ -178,7 +178,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const effectiveProfile: Profile | null = isImpersonating && profile && impersonatedOrg
     ? {
         ...profile,
-        role: impersonatedOrg.type === 'vendor' ? 'vendor_admin' : 'client_manager',
+        role:
+          impersonatedOrg.type === 'vendor'
+            ? 'vendor_admin'
+            : impersonatedOrg.type === 'client'
+              ? 'client_manager'
+              : profile.role,
         org_id: impersonatedOrg.id,
       }
     : profile;

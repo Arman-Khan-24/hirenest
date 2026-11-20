@@ -583,7 +583,13 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               <span className="inline-block w-2.5 h-2.5 rounded-full bg-slate-950 animate-pulse shrink-0" />
               <span>
                 <strong>Admin Diagnostic Mode:</strong> Currently viewing workspace as{' '}
-                <strong>{organization?.name || 'Vendor'}</strong> ({profile?.role === 'vendor_admin' ? 'Vendor Admin' : 'Client Mode'}).
+                <strong>{organization?.name || 'Workspace'}</strong> (
+                {profile?.role === 'vendor_admin'
+                  ? 'Vendor Admin'
+                  : profile?.role === 'client_manager'
+                    ? 'Client Manager'
+                    : 'Internal Team'}
+                ).
               </span>
             </div>
             <button

@@ -58,6 +58,7 @@ import { fetchCandidates } from '../../api/candidates';
 import { fetchSubmissions } from '../../api/submissions';
 import { getVendorPerformanceRpc } from '../../api/interviews';
 import { useAuth } from '../../auth/AuthProvider';
+import { supabase } from '../../lib/supabase';
 import { mapSupabaseError } from '../../lib/errors';
 import {
   ROLE_LABELS,
@@ -1167,7 +1168,7 @@ export const AdminApprovalsPage: React.FC = () => {
 
 // 3. Admin Organizations Page
 export const AdminOrganizationsPage: React.FC = () => {
-  const { startImpersonating } = useAuth();
+  const { profile, startImpersonating } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   const queryClient = useQueryClient();
@@ -1197,6 +1198,32 @@ export const AdminOrganizationsPage: React.FC = () => {
         type: activeTab,
         search,
       }),
+  });
+
+  const { data: internalProfilesData, isLoading: loadingInternalProfiles } = useQuery({
+    queryKey: ['internal_team_profiles'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .in('role', ['admin', 'recruiter'])
+        .order('created_at', { ascending: true });
+      if (error) throw error;
+      return (data || []) as Profile[];
+    },
+    enabled: activeTab === 'internal',
+  });
+
+  const { data: staffMembersData } = useQuery({
+    queryKey: ['internal_staff_members'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('staff_members')
+        .select('*');
+      if (error) return [];
+      return data || [];
+    },
+    enabled: activeTab === 'internal',
   });
 
   const openModal = (org?: Organization) => {
@@ -1383,6 +1410,32 @@ export const AdminOrganizationsPage: React.FC = () => {
                             View as Vendor
                           </Button>
                         )}
+                        {org.type === 'client' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              startImpersonating(org);
+                              navigate('/client');
+                            }}
+                            title={`Jump into workspace as ${org.name}`}
+                          >
+                            View as Client
+                          </Button>
+                        )}
+                        {org.type === 'internal' && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => {
+                              startImpersonating(org);
+                              navigate('/admin');
+                            }}
+                            title={`Jump into workspace as ${org.name}`}
+                          >
+                            View Internal
+                          </Button>
+                        )}
                         <Button size="sm" variant="ghost" onClick={() => openModal(org)}>
                           Edit
                         </Button>
@@ -1395,6 +1448,114 @@ export const AdminOrganizationsPage: React.FC = () => {
           </div>
           <Pagination page={page} totalCount={data.count} onPageChange={setPage} />
         </div>
+      )}
+
+      {activeTab === 'internal' && (
+        <section className="space-y-4 pt-6 border-t border-[var(--border)]">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h2 className="text-[16px] leading-[24px] font-semibold tracking-[-0.01em] text-[var(--text-primary)] flex items-center gap-2">
+                <Users className="h-4 w-4 text-[var(--accent)]" />
+                Internal Operations &amp; HQ Staff Access
+              </h2>
+              <p className="text-[13px] leading-[20px] text-[var(--text-secondary)]">
+                Active operations managers, platform administrators, and recruiters with internal workspace access.
+              </p>
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => navigate('/admin/team')}
+              title="Configure internal staff permissions and departments"
+            >
+              Manage Team &amp; Permissions →
+            </Button>
+          </div>
+
+          {loadingInternalProfiles ? (
+            <TableSkeleton rows={4} cols={5} />
+          ) : !internalProfilesData?.length ? (
+            <div className="py-6 text-center text-[13px] text-[var(--text-secondary)] border border-[var(--border)] rounded-[8px]">
+              No internal staff members configured yet.
+            </div>
+          ) : (
+            <div className="overflow-x-auto border-t border-[var(--border)]">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Staff Member</th>
+                    <th>Designation &amp; Role</th>
+                    <th>Employee ID</th>
+                    <th>Access Scope</th>
+                    <th>Status</th>
+                    <th className="text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {internalProfilesData.map((staffProf) => {
+                    const staffMeta = (staffMembersData || []).find(
+                      (s: any) => s.user_id === staffProf.id
+                    );
+                    const designation =
+                      staffMeta?.designation ||
+                      (staffProf.role === 'admin'
+                        ? 'Platform Administrator & Operations Lead'
+                        : 'Operations & Sourcing Specialist');
+                    const employeeId = staffMeta?.employee_id || '—';
+                    const isCurrentUser = staffProf.id === profile?.id;
+
+                    return (
+                      <tr key={staffProf.id}>
+                        <td>
+                          <div className="font-medium text-[var(--text-primary)] flex items-center gap-2">
+                            {staffProf.full_name || staffProf.email.split('@')[0]}
+                            {isCurrentUser && (
+                              <Badge tone="blue">You</Badge>
+                            )}
+                          </div>
+                          <div className="font-mono text-[11px] text-[var(--text-tertiary)]">
+                            {staffProf.email}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="text-[13px] text-[var(--text-primary)] font-medium">
+                            {designation}
+                          </div>
+                          <div className="text-[11px] text-[var(--text-secondary)] uppercase tracking-wide">
+                            {ROLE_LABELS[staffProf.role] || staffProf.role}
+                          </div>
+                        </td>
+                        <td className="font-mono text-[12px] text-[var(--text-secondary)]">
+                          {employeeId}
+                        </td>
+                        <td>
+                          <Badge tone={staffProf.role === 'admin' ? 'purple' : 'neutral'}>
+                            {staffProf.role === 'admin' ? 'HQ Platform Governance' : 'Sourcing & Operations'}
+                          </Badge>
+                        </td>
+                        <td>
+                          <Badge tone={staffProf.status === 'active' ? 'emerald' : 'red'}>
+                            {staffProf.status}
+                          </Badge>
+                        </td>
+                        <td className="text-right">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => navigate('/admin/team')}
+                            title="Edit permissions in Team Management"
+                          >
+                            Permissions
+                          </Button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
       )}
 
       <Dialog
@@ -1506,9 +1667,20 @@ export const AdminOrganizationDetailPage: React.FC = () => {
   });
 
   const { data: usersData } = useQuery({
-    queryKey: ['org_users', id],
-    queryFn: () => fetchProfiles({ orgId: id!, page: 1 }),
-    enabled: Boolean(id),
+    queryKey: ['org_users', id, org?.type],
+    queryFn: async () => {
+      if (org?.type === 'internal') {
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .in('role', ['admin', 'recruiter'])
+          .order('created_at', { ascending: true });
+        if (error) throw error;
+        return { data: (data || []) as Profile[], count: data?.length || 0 };
+      }
+      return fetchProfiles({ orgId: id!, page: 1 });
+    },
+    enabled: Boolean(id && org),
   });
 
   const { data: reqsData } = useQuery({
@@ -1554,6 +1726,26 @@ export const AdminOrganizationDetailPage: React.FC = () => {
               title={`Simulate and view workspace as ${org.name}`}
             >
               Jump into Workspace (View as Vendor)
+            </Button>
+          ) : org.type === 'client' ? (
+            <Button
+              onClick={() => {
+                startImpersonating(org);
+                navigate('/client');
+              }}
+              title={`Simulate and view workspace as ${org.name}`}
+            >
+              Jump into Workspace (View as Client)
+            </Button>
+          ) : org.type === 'internal' ? (
+            <Button
+              onClick={() => {
+                startImpersonating(org);
+                navigate('/admin');
+              }}
+              title={`Simulate and view workspace as ${org.name}`}
+            >
+              Jump into Workspace (View Internal)
             </Button>
           ) : undefined
         }

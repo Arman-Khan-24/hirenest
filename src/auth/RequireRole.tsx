@@ -10,7 +10,7 @@ interface RequireRoleProps {
 }
 
 export const RequireRole: React.FC<RequireRoleProps> = ({ allowedRoles, children }) => {
-  const { session, profile, organization, loading } = useAuth();
+  const { session, profile, organization, loading, isImpersonating } = useAuth();
   const location = useLocation();
 
   if (loading) {
@@ -42,6 +42,7 @@ export const RequireRole: React.FC<RequireRoleProps> = ({ allowedRoles, children
 
   // Section 4.2: status = 'suspended' or org not approved -> Access suspended page
   const orgNotApproved =
+    !isImpersonating &&
     organization !== null &&
     profile.role !== 'admin' &&
     profile.role !== 'recruiter' &&
