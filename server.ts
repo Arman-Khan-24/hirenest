@@ -5402,17 +5402,17 @@ Return JSON array of objects with fields: targetSkill, question.`;
         resend: {
           configured: hasResend,
           purpose: 'Active Operational & Candidate Alert Mailer (via Verified Domain hirenestworkforce.com)',
-          sender: 'Gopal · HireNest <gopal@hirenestworkforce.com>',
+          sender: 'HireNest Admin <admin@hirenestworkforce.com>',
         },
         smtp: {
           configured: hasSmtp,
           purpose: 'Direct SMTP Gateway (Auto-fallback to Resend active when false)',
           host: smtpHost,
           user: smtpUser,
-          jobAutoCloseSender: 'gopal@hirenestworkforce.com',
-          matchAlertsSender: 'gopal@hirenestworkforce.com',
-          candidateSubmitSender: 'gopal@hirenestworkforce.com',
-          opsSender: 'gopal@hirenestworkforce.com',
+          jobAutoCloseSender: 'admin@hirenestworkforce.com',
+          matchAlertsSender: 'admin@hirenestworkforce.com',
+          candidateSubmitSender: 'admin@hirenestworkforce.com',
+          opsSender: 'admin@hirenestworkforce.com',
         },
       },
     });
@@ -5434,7 +5434,7 @@ Return JSON array of objects with fields: targetSkill, question.`;
           <h2 style="color: #0f172a; margin-top: 0;">HireNest Email Delivery Active</h2>
           <p style="color: #334155; font-size: 14px;">This test confirms that your live email delivery system is functioning seamlessly via the verified domain <strong>hirenestworkforce.com</strong>.</p>
           <div style="background: #f8fafc; padding: 12px; border-left: 3px solid #2563eb; border-radius: 4px; font-size: 13px; margin: 16px 0;">
-            <p style="margin: 4px 0;"><strong>Sender:</strong> Gopal · HireNest &lt;gopal@hirenestworkforce.com&gt;</p>
+            <p style="margin: 4px 0;"><strong>Sender:</strong> HireNest Admin &lt;admin@hirenestworkforce.com&gt;</p>
             <p style="margin: 4px 0;"><strong>Recipient:</strong> ${to}</p>
             <p style="margin: 4px 0;"><strong>Channel:</strong> ${process.env.RESEND_API_KEY ? 'Resend (Verified Domain)' : 'SMTP'}</p>
             <p style="margin: 4px 0;"><strong>Timestamp:</strong> ${new Date().toISOString()}</p>
@@ -5442,7 +5442,7 @@ Return JSON array of objects with fields: targetSkill, question.`;
           <p style="font-size: 12px; color: #94a3b8; margin: 0;">HireNest Workforce Private Limited · Operational Delivery Test</p>
         </div>
       `,
-      from: 'gopal@hirenestworkforce.com',
+      from: 'admin@hirenestworkforce.com',
     });
     res.json({ ok: result.ok, channel: result.channel, error: result.error, messageId: result.messageId, recipient: to });
   });

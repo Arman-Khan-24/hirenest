@@ -8,10 +8,11 @@ import { sendNotificationEmailViaSmtp } from './emailService';
  * Every alert is deduplicated through public.alert_log so cron retries never double-send.
  * 
  * SENDER ROUTING:
- * - Job auto-closed alerts: gopal@hirenestworkforce.com
- * - Candidate matching alerts to admin & vendors: gopal@hirenestworkforce.com
- * - Candidate submitted to client alerts: gopal@hirenestworkforce.com
- * - SLA warnings & operations: admin@hirenestworkforce.com / praveen@hirenestworkforce.com
+ * - All operational & candidate matching alerts: admin@hirenestworkforce.com
+ * - Job auto-closed alerts: admin@hirenestworkforce.com
+ * - Candidate matching alerts to admin & vendors: admin@hirenestworkforce.com
+ * - Candidate submitted to client alerts: admin@hirenestworkforce.com
+ * - SLA warnings & operations: admin@hirenestworkforce.com
  */
 
 const APP_URL = () => process.env.APP_BASE_URL || 'https://os.hirenestworkforce.com';
@@ -30,7 +31,7 @@ export async function sendEmailResult(
     to,
     subject,
     html,
-    from: from || 'gopal@hirenestworkforce.com',
+    from: from || 'admin@hirenestworkforce.com',
   });
   return { ok: res.ok, error: res.error };
 }
@@ -217,7 +218,7 @@ export async function runMorningDigest(admin: SupabaseClient): Promise<{ vendors
         body: `${sharedIds.length} open requirement(s) are shared with you and ${matches} of your profiles match at ${MIN_MATCH}% or higher. Submit early to hold your SLA.`,
         link: '/vendor/requirements',
       },
-      'gopal@hirenestworkforce.com'
+      'admin@hirenestworkforce.com'
     );
   }
 
@@ -240,7 +241,7 @@ export async function runMorningDigest(admin: SupabaseClient): Promise<{ vendors
         body: `${newMatches} candidate(s) now match an open requirement at ${MIN_MATCH}% or higher.`,
         link: '/admin/requirements',
       },
-      'gopal@hirenestworkforce.com'
+      'admin@hirenestworkforce.com'
     );
   }
   return { vendors: vendorsNotified, admins: adminsNotified };
@@ -276,7 +277,7 @@ export async function runSlaAutoClose(admin: SupabaseClient): Promise<{ closed: 
 
     closed++;
 
-    // Notify admins (Gopal & Praveen) via SMTP from gopal@hirenestworkforce.com
+    // Notify admins (Gopal & Praveen) via SMTP from admin@hirenestworkforce.com
     await notifyUsers(
       admin,
       await staffUsers(admin, ['admin', 'recruiter']),
@@ -286,7 +287,7 @@ export async function runSlaAutoClose(admin: SupabaseClient): Promise<{ closed: 
         body: `"${r.title}" was automatically closed after its ${r.submission_sla_hours}-hour SLA expired. Re-open it from the requirement detail page to set a new SLA.`,
         link: `/admin/requirements/${r.id}`,
       },
-      'gopal@hirenestworkforce.com'
+      'admin@hirenestworkforce.com'
     );
 
     // Also notify mapped vendors whose SLA expired
@@ -305,7 +306,7 @@ export async function runSlaAutoClose(admin: SupabaseClient): Promise<{ closed: 
           body: `The active submission window for "${r.title}" has concluded. Thank you for your submissions.`,
           link: `/vendor/requirements/${r.id}`,
         },
-        'gopal@hirenestworkforce.com'
+        'admin@hirenestworkforce.com'
       );
     }
   }
@@ -564,12 +565,12 @@ export async function notifyCandidateSubmittedToClient(
 
   const subject = `Candidate Submitted to Client: ${candidateName} (via ${vendorName}) for ${reqTitle}${matchScore !== null ? ` [${matchScore}% Match]` : ''}`;
 
-  await sendEmail(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  await sendEmail(emails, subject, emailHtml, 'admin@hirenestworkforce.com');
 }
 
 /**
  * Triggered whenever ANY candidate is submitted for a requirement (by a vendor or recruiter):
- * Sends SMTP email from gopal@hirenestworkforce.com to admin (Gopal) with vendor name, role title, and matching score.
+ * Sends SMTP email from admin@hirenestworkforce.com to admin (Gopal) with vendor name, role title, and matching score.
  */
 export async function notifyCandidateSubmitted(
   admin: SupabaseClient,
@@ -728,7 +729,7 @@ export async function notifyCandidateSubmitted(
 
   const subject = `New Candidate Submission: ${candidateName} by ${vendorName} for ${reqTitle}${matchScore !== null ? ` (${matchScore}% Match)` : ''}`;
 
-  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'admin@hirenestworkforce.com');
   if (!sendResult.ok) {
     console.error(`[notifyCandidateSubmitted] Email sending failed (${sendResult.channel}):`, sendResult.error);
     // Release claim so it can retry
@@ -939,7 +940,7 @@ export async function notifyRequirementAcknowledged(
     emails.push('gopal@hirenestworkforce.com');
   }
 
-  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'gopal@hirenestworkforce.com');
+  const sendResult = await sendEmailResult(emails, subject, emailHtml, 'admin@hirenestworkforce.com');
   if (!sendResult.ok) {
     console.error(`[notifyRequirementAcknowledged] Email dispatch failed (${sendResult.channel}):`, sendResult.error);
     await admin.from('alert_log').delete().eq('dedupe_key', claimKey);
@@ -1020,7 +1021,7 @@ export async function notifyRequirementCandidateMatches(
       body: `Matching engine has identified ${count} qualified profile(s) (>=${MIN_MATCH}%) ready for review on "${req.title}".`,
       link: `/admin/requirements/${req.id}`,
     },
-    'gopal@hirenestworkforce.com'
+    'admin@hirenestworkforce.com'
   );
 
   // Notify vendors whose candidates match
@@ -1040,7 +1041,7 @@ export async function notifyRequirementCandidateMatches(
         body: `Your agency has candidates matching open requirement "${req.title}". Submit profiles early to maintain your SLA.`,
         link: `/vendor/requirements/${req.id}`,
       },
-      'gopal@hirenestworkforce.com'
+      'admin@hirenestworkforce.com'
     );
   }
 

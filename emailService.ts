@@ -76,7 +76,7 @@ export async function sendInviteEmailViaResend(params: {
   const from =
     process.env.RESEND_INVITE_FROM ||
     process.env.RESEND_FROM_EMAIL ||
-    'Gopal · HireNest <gopal@hirenestworkforce.com>';
+    'HireNest Admin <admin@hirenestworkforce.com>';
 
   try {
     const res = await fetch('https://api.resend.com/emails', {
@@ -136,16 +136,16 @@ export async function sendNotificationViaResend(params: {
   let from =
     process.env.RESEND_NOTIFY_FROM ||
     process.env.RESEND_FROM_EMAIL ||
-    'Gopal · HireNest <gopal@hirenestworkforce.com>';
+    'HireNest Admin <admin@hirenestworkforce.com>';
 
-  if (params.from === 'gopal' || params.from === 'gopal@hirenestworkforce.com' || !params.from) {
+  if (params.from === 'admin' || params.from === 'admin@hirenestworkforce.com' || !params.from) {
+    from = 'HireNest Admin <admin@hirenestworkforce.com>';
+  } else if (params.from === 'gopal' || params.from === 'gopal@hirenestworkforce.com') {
     from = 'Gopal · HireNest <gopal@hirenestworkforce.com>';
   } else if (params.from === 'praveen' || params.from === 'praveen@hirenestworkforce.com') {
     from = 'Praveen · HireNest <praveen@hirenestworkforce.com>';
-  } else if (params.from === 'admin' || params.from === 'admin@hirenestworkforce.com') {
-    from = 'Gopal · HireNest <gopal@hirenestworkforce.com>';
   } else if (params.from && params.from.includes('@')) {
-    from = params.from.includes('<') ? params.from : `Gopal · HireNest <${params.from}>`;
+    from = params.from.includes('<') ? params.from : `HireNest Admin <${params.from}>`;
   }
 
   try {
@@ -192,16 +192,25 @@ export async function sendNotificationEmailViaSmtp(params: {
     return { ok: false, channel: 'smtp', error: 'No recipient email specified' };
   }
 
-  // Determine standard sender email: default to Gopal
-  let senderAddress = 'gopal@hirenestworkforce.com';
-  let senderName = 'Gopal · HireNest';
+  // Determine standard sender email: default to admin@hirenestworkforce.com
+  let senderAddress = 'admin@hirenestworkforce.com';
+  let senderName = 'HireNest Admin';
 
-  if (params.from === 'praveen' || params.from === 'praveen@hirenestworkforce.com') {
+  if (params.from === 'gopal' || params.from === 'gopal@hirenestworkforce.com') {
+    senderAddress = 'gopal@hirenestworkforce.com';
+    senderName = 'Gopal · HireNest';
+  } else if (params.from === 'praveen' || params.from === 'praveen@hirenestworkforce.com') {
     senderAddress = 'praveen@hirenestworkforce.com';
     senderName = 'Praveen · HireNest';
   } else if (params.from && params.from.includes('@')) {
     senderAddress = params.from;
-    senderName = params.from.includes('gopal') ? 'Gopal · HireNest' : 'HireNest';
+    senderName = params.from.includes('admin')
+      ? 'HireNest Admin'
+      : params.from.includes('gopal')
+        ? 'Gopal · HireNest'
+        : params.from.includes('praveen')
+          ? 'Praveen · HireNest'
+          : 'HireNest';
   }
 
   const formattedFrom = `"${senderName}" <${senderAddress}>`;
