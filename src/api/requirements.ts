@@ -453,9 +453,15 @@ export async function fetchRequirements(params: {
     query = query.ilike('title', `%${params.search.trim()}%`);
   }
 
-  const { data, error } = await query;
-  if (error) throw error;
-  let allRows = (data || []) as Requirement[];
+  let allRows: Requirement[] = [];
+  try {
+    const { data, error } = await query;
+    if (error) throw error;
+    allRows = (data || []) as Requirement[];
+  } catch (err) {
+    if (!params.forVendor) throw err;
+    console.warn('[HireNestOS] Direct requirements fetch failed, falling back to server catalog:', err);
+  }
 
   // Filter out soft-deleted requirements before syncing or displaying in active lists
   if (!params.includeDeleted) {
@@ -564,13 +570,18 @@ export async function fetchRequirementById(
     return null;
   }
 
-  const { data, error } = await supabase
-    .from('requirements')
-    .select('*, organizations:client_org_id(id, name)')
-    .eq('id', id)
-    .maybeSingle();
-  if (error) throw error;
-  let req = data as Requirement | null;
+  let req: Requirement | null = null;
+  try {
+    const { data, error } = await supabase
+      .from('requirements')
+      .select('*, organizations:client_org_id(id, name)')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) throw error;
+    req = data as Requirement | null;
+  } catch (err) {
+    console.warn('[HireNestOS] Direct requirement fetch failed, checking backend catalog:', err);
+  }
 
   if (req && !options?.allowDeletedForAdminAudit && isRequirementSoftDeleted(req)) {
     return null;
@@ -1488,13 +1499,18 @@ export async function fetchRequirementVendorShares(
   if (requirementId) query = query.eq('requirement_id', requirementId);
   if (vendorOrgId) query = query.eq('vendor_org_id', vendorOrgId);
 
-  const { data, error } = await query;
-  if (error) throw error;
-  const dbShares = ((data || []) as RequirementVendorShare[]).filter((sh) => {
-    if (isRequirementSoftDeleted(sh.requirement_id)) return false;
-    if (sh.requirements && isRequirementSoftDeleted(sh.requirements)) return false;
-    return true;
-  });
+  let dbShares: RequirementVendorShare[] = [];
+  try {
+    const { data, error } = await query;
+    if (error) throw error;
+    dbShares = ((data || []) as RequirementVendorShare[]).filter((sh) => {
+      if (isRequirementSoftDeleted(sh.requirement_id)) return false;
+      if (sh.requirements && isRequirementSoftDeleted(sh.requirements)) return false;
+      return true;
+    });
+  } catch (err) {
+    console.warn('[HireNestOS] Direct shares fetch failed, falling back to server catalog:', err);
+  }
 
   // Merge with backend catalog shares so both Admin requirement detail (Overview / Vendor sharing)
   // and Vendor workspace views always reflect active requirement shares

@@ -529,6 +529,37 @@ async function ensureAccountSubscription(
 
     if (existing) {
       const record = dbRowToSubscription(existing);
+
+      // Check if organizations table has an extended trial date
+      try {
+        const { data: orgRow } = await sb
+          .from('organizations')
+          .select('trial_ends_at, name')
+          .eq('id', accountId)
+          .maybeSingle();
+
+        if (orgRow?.trial_ends_at) {
+          const orgEndsAtMs = Date.parse(orgRow.trial_ends_at);
+          const subEndsAtMs = Date.parse(record.trialEndsAt);
+          if (orgEndsAtMs > subEndsAtMs) {
+            record.trialEndsAt = orgRow.trial_ends_at;
+            if (record.subscriptionStatus === 'expired') {
+              record.subscriptionStatus = 'trialing';
+            }
+            await sb
+              .from('account_subscriptions')
+              .update({
+                trial_ends_at: record.trialEndsAt,
+                subscription_status: record.subscriptionStatus,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('account_id', accountId);
+          }
+        }
+      } catch {
+        // Non-blocking sync
+      }
+
       if (accountName && accountName !== '' && record.accountName === 'HireNest Workspace') {
         record.accountName = accountName;
         await sb.from('account_subscriptions').update({ account_name: accountName }).eq('account_id', accountId);
@@ -1755,6 +1786,92 @@ async function startServer() {
     } catch (err) {
       console.error('[short-link] Exception:', err);
       return res.status(500).json({ error: 'Lookup failed' });
+    }
+  });
+
+  // ==========================================================================
+  // AUTH PROXY ENDPOINTS (Same-origin resilient fallback for clients with BaaS/CORS/network blocks)
+  // ==========================================================================
+  app.post('/api/auth/signin', async (req, res) => {
+    try {
+      const { email, password } = (req.body || {}) as { email?: string; password?: string };
+      if (!email || !password) {
+        return res.status(400).json({ ok: false, error: 'Email and password are required' });
+      }
+
+      const url = process.env.VITE_SUPABASE_URL || 'https://ipotfugjdgdrhyucmajx.supabase.co';
+      const anonKey = process.env.VITE_SUPABASE_ANON_KEY;
+      if (!url || !anonKey) {
+        return res.status(500).json({ ok: false, error: 'Authentication service unconfigured' });
+      }
+
+      const client = createClient(url, anonKey, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+
+      const { data, error } = await client.auth.signInWithPassword({
+        email: String(email).trim(),
+        password: String(password),
+      });
+
+      if (error) {
+        return res.status(400).json({ ok: false, error: error.message });
+      }
+
+      return res.json({
+        ok: true,
+        session: data.session,
+        user: data.user,
+      });
+    } catch (err) {
+      console.error('[HireNestOS Auth Proxy Error]:', err);
+      return res.status(500).json({ ok: false, error: 'Authentication service temporarily unavailable' });
+    }
+  });
+
+  app.get('/api/auth/profile', async (req, res) => {
+    try {
+      const sb = getSupabaseAdmin();
+      if (!sb) {
+        return res.status(500).json({ ok: false, error: 'Database unconfigured' });
+      }
+
+      let userId = typeof req.query.userId === 'string' ? req.query.userId.trim() : '';
+      if (!userId) {
+        const auth = await authenticateStaffingCaller(req);
+        if (auth.ok) {
+          userId = auth.userId;
+        }
+      }
+
+      if (!userId) {
+        return res.status(400).json({ ok: false, error: 'User ID required' });
+      }
+
+      const { data: profile, error: profErr } = await sb
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profErr || !profile) {
+        return res.status(404).json({ ok: false, error: 'Profile not found' });
+      }
+
+      let organization = null;
+      if (profile.org_id) {
+        const { data: orgData } = await sb
+          .from('organizations')
+          .select('*')
+          .eq('id', profile.org_id)
+          .maybeSingle();
+        organization = orgData || null;
+      }
+
+      return res.json({ ok: true, profile, organization });
+    } catch (err) {
+      console.error('[HireNestOS Auth Profile Error]:', err);
+      return res.status(500).json({ ok: false, error: 'Could not load profile' });
     }
   });
 

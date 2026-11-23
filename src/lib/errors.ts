@@ -24,6 +24,16 @@ export function mapSupabaseError(err: unknown): string {
     console.warn(`[HireNestOS DB Error Code]: ${code}`);
   }
 
+  // Network connectivity errors (offline, DNS, blocked by ad-blocker or proxy)
+  if (
+    msg.toLowerCase().includes('failed to fetch') ||
+    msg.toLowerCase().includes('networkerror') ||
+    msg.toLowerCase().includes('network error') ||
+    msg.toLowerCase().includes('load failed')
+  ) {
+    return 'Unable to connect to the server. Please check your internet connection or network settings and try again.';
+  }
+
   if (code === '42501' || msg.toUpperCase().startsWith('FORBIDDEN')) {
     const detail = msg.replace(/^FORBIDDEN:?\s*/i, '').trim();
     if (detail && /^[a-z]/i.test(detail)) {
@@ -66,6 +76,14 @@ function formatCheckConstraintMessage(msg: string): string {
 
 function formatErrorMessageString(msg: string): string {
   if (!msg) return 'Operation could not be completed. Please try again.';
+  if (
+    msg.toLowerCase().includes('failed to fetch') ||
+    msg.toLowerCase().includes('networkerror') ||
+    msg.toLowerCase().includes('network error') ||
+    msg.toLowerCase().includes('load failed')
+  ) {
+    return 'Unable to connect to the server. Please check your internet connection or network settings and try again.';
+  }
   if (msg.toUpperCase().startsWith('FORBIDDEN')) {
     return "You don't have permission to do this.";
   }

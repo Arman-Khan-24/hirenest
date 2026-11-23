@@ -63,31 +63,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const loadProfileAndOrg = useCallback(async (userId: string) => {
     try {
       // Never trust user_metadata for role; read role & status from public.profiles
-      const { data: profData, error: profErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+      let typedProfile: Profile | null = null;
+      let typedOrg: Organization | null = null;
 
-      if (profErr || !profData) {
-        setProfile(null);
-        setOrganization(null);
-        return;
-      }
-
-      const typedProfile = profData as Profile;
-      setProfile(typedProfile);
-
-      if (typedProfile.org_id) {
-        const { data: orgData } = await supabase
-          .from('organizations')
+      try {
+        const { data: profData, error: profErr } = await supabase
+          .from('profiles')
           .select('*')
-          .eq('id', typedProfile.org_id)
+          .eq('id', userId)
           .maybeSingle();
-        setOrganization((orgData as Organization) || null);
-      } else {
-        setOrganization(null);
+
+        if (!profErr && profData) {
+          typedProfile = profData as Profile;
+          if (typedProfile.org_id) {
+            const { data: orgData } = await supabase
+              .from('organizations')
+              .select('*')
+              .eq('id', typedProfile.org_id)
+              .maybeSingle();
+            typedOrg = (orgData as Organization) || null;
+          }
+        }
+      } catch {
+        // Direct read failed, will fallback to backend profile endpoint below
       }
+
+      // If direct Supabase read failed or was blocked by client network / CORS / adblocker:
+      if (!typedProfile) {
+        try {
+          const res = await fetch(`/api/auth/profile?userId=${encodeURIComponent(userId)}`);
+          if (res.ok) {
+            const backendData = await res.json();
+            if (backendData.ok && backendData.profile) {
+              typedProfile = backendData.profile as Profile;
+              typedOrg = (backendData.organization as Organization) || null;
+            }
+          }
+        } catch {
+          // Non-blocking fallback
+        }
+      }
+
+      setProfile(typedProfile);
+      setOrganization(typedOrg);
     } catch {
       setProfile(null);
       setOrganization(null);

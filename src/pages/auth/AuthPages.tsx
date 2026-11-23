@@ -183,19 +183,67 @@ export const SignInPage: React.FC = () => {
     setAuthError(null);
     try {
       const cleanEmail = values.email.trim();
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: cleanEmail,
-        password: values.password,
-      });
-      if (error) throw error;
+      let user = null;
 
-      if (data.user) {
+      try {
+        const { data, error } = await supabase.auth.signInWithPassword({
+          email: cleanEmail,
+          password: values.password,
+        });
+        if (error) throw error;
+        user = data.user;
+      } catch (directErr) {
+        const errStr = String(
+          (directErr as { message?: string })?.message || directErr || ''
+        ).toLowerCase();
+        const isFetchError =
+          directErr instanceof TypeError ||
+          errStr.includes('failed to fetch') ||
+          errStr.includes('networkerror') ||
+          errStr.includes('load failed');
+
+        if (isFetchError) {
+          // Seamless fallback via same-origin backend proxy
+          const res = await fetch('/api/auth/signin', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: cleanEmail, password: values.password }),
+          });
+          const json = await res.json().catch(() => ({}));
+          if (!res.ok || !json.ok) {
+            throw new Error(json.error || 'Invalid login credentials');
+          }
+          if (json.session) {
+            await supabase.auth.setSession(json.session);
+            user = json.user;
+          }
+        } else {
+          throw directErr;
+        }
+      }
+
+      if (user) {
         await refreshProfile();
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('role, status')
-          .eq('id', data.user.id)
-          .maybeSingle();
+        let prof = null;
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('role, status')
+            .eq('id', user.id)
+            .maybeSingle();
+          prof = data;
+        } catch {
+          // Fallback to /api/auth/profile if direct Supabase read is blocked
+          try {
+            const res = await fetch(`/api/auth/profile?userId=${encodeURIComponent(user.id)}`);
+            if (res.ok) {
+              const pData = await res.json();
+              prof = pData.profile || null;
+            }
+          } catch {
+            // non-blocking
+          }
+        }
 
         const returnTo = searchParams.get('returnTo');
         if (returnTo && returnTo.startsWith('/') && returnTo !== '/signin') {
