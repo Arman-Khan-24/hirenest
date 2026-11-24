@@ -862,7 +862,7 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
                       {subscriptionData.daysRemaining}{' '}
                       {subscriptionData.daysRemaining === 1 ? 'day' : 'days'} left
                     </span>
-                    {subscriptionData.reminders[0]
+                    {subscriptionData.daysRemaining <= 7 && subscriptionData.reminders[0]
                       ? ` · ${subscriptionData.reminders[0].message}`
                       : ' · Review plans and upgrade for uninterrupted access.'}
                   </span>
