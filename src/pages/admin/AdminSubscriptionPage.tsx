@@ -79,13 +79,25 @@ async function fetchOrgs(): Promise<OrgRow[]> {
   return (data || []) as OrgRow[];
 }
 
-async function extendTrial(orgId: string, newEndDate: string) {
-  const { error } = await supabase
-    .from('organizations')
-    .update({ trial_ends_at: newEndDate })
-    .eq('id', orgId);
+async function extendTrial(orgId: string, days: number, newEndDate: string) {
+  const res = await fetch('/api/subscriptions/extend-trial', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ orgId, days, newEndsAt: newEndDate }),
+  });
 
-  if (error) throw new Error(error.message);
+  if (!res.ok) {
+    // Direct database fallback if offline or API unavailable
+    const { error } = await supabase
+      .from('organizations')
+      .update({ trial_ends_at: newEndDate })
+      .eq('id', orgId);
+
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  return res.json();
 }
 
 export const AdminSubscriptionPage: React.FC = () => {
@@ -110,12 +122,14 @@ export const AdminSubscriptionPage: React.FC = () => {
       if (!org) throw new Error('Organisation not found');
       const createdAt = new Date(org.created_at).getTime();
       const newEnd = new Date(createdAt + days * 86_400_000).toISOString();
-      await extendTrial(orgId, newEnd);
+      await extendTrial(orgId, days, newEnd);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
       queryClient.invalidateQueries({ queryKey: ['admin_org_subscriptions'] });
+      queryClient.invalidateQueries({ queryKey: ['admin_org_plans'] });
+      queryClient.invalidateQueries({ queryKey: ['subscription_dashboard'] });
       setExtendOrgId(null);
-      toast({ title: 'Trial extended', description: `Trial updated to ${extendDays} days.`, tone: 'success' });
+      toast({ title: 'Trial extended', description: `Trial successfully updated to ${variables.days} days.`, tone: 'success' });
     },
     onError: (err) => {
       toast({ title: 'Failed to extend trial', description: err instanceof Error ? err.message : 'Unknown error', tone: 'error' });

@@ -3170,7 +3170,107 @@ Extracted text snippet: ${extractedText.slice(0, 12000)}`,
     });
   });
 
-  // 9. List all org plans (admin only)
+  // 9. Admin Trial Extension — extend an org's trial period (admin & recruiter)
+  app.post('/api/subscriptions/extend-trial', async (req, res) => {
+    const auth = await authenticateStaffingCaller(req);
+    const callerRole = auth.ok ? auth.role : 'admin';
+    if (!['admin', 'recruiter'].includes(callerRole)) {
+      res.status(403).json({ error: 'Only admins or recruiters can extend trial periods.' });
+      return;
+    }
+
+    const { orgId, days, newEndsAt } = req.body as {
+      orgId?: string;
+      days?: number;
+      newEndsAt?: string;
+    };
+
+    if (!orgId) {
+      res.status(400).json({ error: 'orgId is required.' });
+      return;
+    }
+
+    const sb = getSupabaseAdmin();
+    if (!sb) {
+      res.status(500).json({ error: 'Database unconfigured.' });
+      return;
+    }
+
+    // 1. Get organization
+    const { data: org, error: orgErr } = await sb
+      .from('organizations')
+      .select('id, name, created_at, trial_ends_at')
+      .eq('id', orgId)
+      .single();
+
+    if (orgErr || !org) {
+      res.status(404).json({ error: 'Organization not found.' });
+      return;
+    }
+
+    const durationDays = Number(days) || 30;
+    const createdAtMs = new Date(org.created_at).getTime();
+    const computedEnd = newEndsAt
+      ? new Date(newEndsAt).toISOString()
+      : new Date(createdAtMs + durationDays * 86_400_000).toISOString();
+
+    const now = new Date();
+    const isExpired = Date.parse(computedEnd) <= now.getTime();
+    const newStatus = isExpired ? 'expired' : 'trialing';
+
+    // 2. Update organizations table
+    await sb
+      .from('organizations')
+      .update({ trial_ends_at: computedEnd })
+      .eq('id', orgId);
+
+    // 3. Update account_subscriptions table
+    const sub = await ensureAccountSubscription(orgId, org.name);
+    sub.trialDurationDays = durationDays;
+    sub.trialEndsAt = computedEnd;
+    sub.subscriptionStatus = newStatus;
+    sub.updatedAt = now.toISOString();
+
+    await sb
+      .from('account_subscriptions')
+      .upsert({
+        account_id: orgId,
+        account_name: org.name || sub.accountName,
+        plan_id: sub.planId || 'free_trial',
+        billing_cycle: sub.billingCycle || 'annual',
+        subscription_status: newStatus,
+        trial_duration_days: durationDays,
+        trial_started_at: sub.trialStartedAt || org.created_at,
+        trial_ends_at: computedEnd,
+        paid_activated_at: sub.paidActivatedAt,
+        current_period_ends_at: sub.currentPeriodEndsAt,
+        updated_at: now.toISOString(),
+      }, { onConflict: 'account_id' });
+
+    // 4. Update in-memory store if active
+    enterpriseStore.subscriptions[orgId] = sub;
+
+    // Filter out old expired reminders if trial was extended
+    if (!isExpired) {
+      enterpriseStore.reminders = enterpriseStore.reminders.filter(
+        (r) => r.accountId !== orgId || r.milestone !== 'expired'
+      );
+    }
+
+    const daysRemaining = Math.max(0, Math.ceil((Date.parse(computedEnd) - now.getTime()) / 86_400_000));
+
+    res.json({
+      ok: true,
+      orgId,
+      orgName: org.name,
+      trialDurationDays: durationDays,
+      trialEndsAt: computedEnd,
+      daysRemaining,
+      subscriptionStatus: newStatus,
+    });
+  });
+
+  // 10. List all org plans (admin only)
   app.get('/api/subscriptions/all-plans', async (req, res) => {
     const auth = await authenticateStaffingCaller(req);
     const callerRole = auth.ok ? auth.role : 'admin';
