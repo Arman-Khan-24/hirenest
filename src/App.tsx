@@ -223,7 +223,7 @@ function AppRoutes() {
           </RequireRole>
         }
       >
-        <Route index element={<HqDashboardPage />} />
+        <Route index element={<CeoDashboardPage />} />
         <Route path="approvals" element={<AdminApprovalsPage />} />
         <Route path="organizations" element={<AdminOrganizationsPage />} />
         <Route path="organizations/:id" element={<AdminOrganizationDetailPage />} />

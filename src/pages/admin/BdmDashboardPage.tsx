@@ -78,10 +78,11 @@ const BdmDashboardPage: React.FC = () => {
   );
 
   const recentActivity = useMemo(() => {
-    type Event = { id: string; at: string; node: React.ReactNode };
+    type Event = { id: string; at: string; to: string; node: React.ReactNode };
     const subEvents: Event[] = subs.slice(0, 20).map((s) => ({
       id: `sub-${s.id}`,
       at: s.created_at,
+      to: `/recruiter/submissions?subId=${s.id}`,
       node: (
         <>
           <span className="font-medium text-[var(--text-primary)]">{s.candidates?.full_name || 'A candidate'}</span>
@@ -96,6 +97,7 @@ const BdmDashboardPage: React.FC = () => {
     const reqEvents: Event[] = open.slice(0, 20).map((r) => ({
       id: `req-${r.id}`,
       at: r.created_at,
+      to: `/recruiter/requirements/${r.id}`,
       node: (
         <>
           <span className="font-medium text-[var(--text-primary)]">{r.organizations?.name || 'A client'}</span>
@@ -288,12 +290,12 @@ const BdmDashboardPage: React.FC = () => {
               ) : (
                 <div className="divide-y divide-[var(--border)]">
                   {recentActivity.map((ev) => (
-                    <div key={ev.id} className="py-2.5 text-[13px] leading-[20px] text-[var(--text-secondary)]">
+                    <button key={ev.id} type="button" onClick={() => navigate(ev.to)} className="block w-full py-2.5 text-left text-[13px] leading-[20px] text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]">
                       {ev.node}
                       <div className="text-[11px] text-[var(--text-tertiary)] font-mono mt-0.5">
                         {formatRelativeTime(ev.at)}
                       </div>
-                    </div>
+                    </button>
                   ))}
                 </div>
               )}

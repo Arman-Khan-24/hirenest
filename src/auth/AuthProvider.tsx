@@ -27,7 +27,7 @@ export function getHomeRouteForRole(role: AppRole | null | undefined, status?: s
   if (status === 'suspended') return '/suspended';
   switch (role) {
     case 'admin':
-      return '/admin';
+      return '/admin/ceo';
     case 'recruiter':
       return '/recruiter';
     case 'client_manager':

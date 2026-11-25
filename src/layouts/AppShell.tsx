@@ -150,14 +150,25 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     const uuidMatch = target.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}/);
     const entityId = uuidMatch ? uuidMatch[0] : null;
 
+    if (n.kind === 'interview' && isVendor && entityId && target.includes('/submissions')) {
+      // Interview notifications historically carry the related submission id.
+      target = `/vendor/interviews?submissionId=${entityId}`;
+      navigate(target);
+      return;
+    }
+
     if (target.includes('/submissions')) {
       if (isVendor) {
         target = entityId ? `/vendor/submissions?subId=${entityId}` : '/vendor/submissions';
       } else if (isHq) {
         target = entityId ? `/admin/submissions?subId=${entityId}` : '/admin/submissions';
       } else if (isClient) {
-        target = entityId ? `/client/submissions?subId=${entityId}` : '/client/submissions';
+        // Client submissions live in the candidate review pipeline.
+        target = entityId ? `/client/candidates?subId=${entityId}` : '/client/candidates';
       }
+    } else if (target.includes('/interviews') && entityId) {
+      // Interview detail is opened from the workspace interview list by id.
+      target = `${isVendor ? '/vendor' : isClient ? '/client' : '/admin'}/interviews?interviewId=${entityId}`;
     } else if (target.includes('/requirements') && entityId) {
       if (isVendor) {
         target = `/vendor/requirements/${entityId}`;

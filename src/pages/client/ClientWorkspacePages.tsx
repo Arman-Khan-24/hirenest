@@ -1108,10 +1108,16 @@ export const ClientRequirementDetailPage: React.FC = () => {
 export const ClientCandidatesReviewPage: React.FC = () => {
   const { profile } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const queryClient = useQueryClient();
   const [page, setPage] = useState(1);
   const [stageFilter, setStageFilter] = useState<SubmissionStage | ''>('');
   const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
+  const querySubId = searchParams.get('subId') || searchParams.get('submissionId');
+
+  React.useEffect(() => {
+    if (querySubId) setDrawerSubId(querySubId);
+  }, [querySubId]);
   const [qualityTarget, setQualityTarget] = useState<{
     submissionId: string;
     candidateName?: string;
@@ -1369,6 +1375,8 @@ export const ClientCandidatesReviewPage: React.FC = () => {
 export const ClientInterviewsPage: React.FC = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [searchParams] = useSearchParams();
+  const queryInterviewId = searchParams.get('interviewId');
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState<InterviewStatus | ''>('');
   const [feedbackModalTarget, setFeedbackModalTarget] = useState<{
@@ -1382,6 +1390,19 @@ export const ClientInterviewsPage: React.FC = () => {
     queryKey: ['my_pending_feedback'],
     queryFn: fetchMyPendingFeedback,
   });
+
+  React.useEffect(() => {
+    if (!queryInterviewId) return;
+    const interview = pendingFeedback.find((item) => item.interview_id === queryInterviewId);
+    if (interview) {
+      setFeedbackModalTarget({
+        interviewId: interview.interview_id,
+        submissionId: interview.submission_id,
+        roundType: interview.round_type,
+        candidateName: interview.candidate_name,
+      });
+    }
+  }, [queryInterviewId, pendingFeedback]);
 
   const { data, isLoading, error, refetch } = useQuery({
     queryKey: ['client_interviews', page, status],

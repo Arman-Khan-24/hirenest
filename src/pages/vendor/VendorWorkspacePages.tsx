@@ -3790,6 +3790,8 @@ export const VendorMatchIntelligencePage: React.FC = () => {
 // 9. Vendor Interviews Page (/vendor/interviews)
 export const VendorInterviewsPage: React.FC = () => {
   const { profile } = useAuth();
+  const [searchParams] = useSearchParams();
+  const querySubmissionId = searchParams.get('submissionId');
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [drawerSubId, setDrawerSubId] = useState<string | null>(null);
@@ -3803,6 +3805,11 @@ export const VendorInterviewsPage: React.FC = () => {
       }),
     enabled: Boolean(profile?.org_id),
   });
+
+  React.useEffect(() => {
+    if (!querySubmissionId || !data?.data?.some((iv) => iv.submission_id === querySubmissionId)) return;
+    setDrawerSubId(querySubmissionId);
+  }, [querySubmissionId, data?.data]);
 
   return (
     <div className="space-y-6">
