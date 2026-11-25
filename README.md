@@ -23,7 +23,7 @@ GEMINI_API_KEY="your-gemini-api-key"
 ```
 
 ### Important Security Rules
-- **Never** put `SUPABASE_SERVICE_ROLE_KEY` in `.env` or anywhere in client/server code. All database reads, writes, and RPC invocations run under the authenticated user's Supabase JWT so Postgres Row-Level Security (RLS) is strictly enforced.
+- Browser requests use the publishable key and user JWT under RLS. Existing privileged server operations require `SUPABASE_SERVICE_ROLE_KEY` in server-only environment configuration. Never expose it through `VITE_` variables or commit it.
 - **Never** prefix `GEMINI_API_KEY` with `VITE_`. It is accessed exclusively inside `server.ts`.
 - If `VITE_SUPABASE_URL` or `VITE_SUPABASE_ANON_KEY` are missing, HireNestOS automatically renders the **Environment Setup Guide** screen with step-by-step instructions and zero AI features exposed before login.
 
@@ -32,13 +32,13 @@ GEMINI_API_KEY="your-gemini-api-key"
 ## 2. How Roles Work & Creating the First Admin
 
 Every user who signs up via Supabase Auth gets a `public.profiles` row created automatically by the database trigger with:
-- `role = 'pending'`
-- `status = 'pending'`
+- Candidates: `role = 'candidate'`, `status = 'active'`.
+- Vendor/client registrations: `role = 'pending'`, `status = 'pending_approval'`.
 
-Users with `role = 'pending'` or `status = 'pending'` are held at `/pending` (**Pending Approval Gate**) and cannot read or write any business tables until an Admin approves them via `approve_user`.
+Users with `role = 'pending'` or `status = 'pending_approval'` are held at `/pending` (**Pending Approval Gate**) and cannot read or write any business tables until an Admin approves them via the audited registration review workflow.
 
 ### Bootstrapping the First Admin
-Because `approve_user` requires an existing `admin`, promote your first account in the Supabase SQL Editor after signing up:
+Because registration approval requires an existing `admin`, promote your first account in the Supabase SQL Editor after signing up:
 
 ```sql
 do $$
@@ -151,3 +151,6 @@ Gemini AI is strictly an optional, server-guarded assistant (`/api/gemini/sugges
 - **In-Memory Gemini Rate Limiter (20 req/hr)**: The per-user rate limit of 20 requests/hour on `/api/gemini/suggest` is stored in memory inside `server.ts`. It resets on server restart and is scoped per Node process instance.
 - **Client-Side Notification Polling**: The notification bell polls `public.notifications` every 30 seconds via React Query rather than opening persistent WebSocket channels.
 - **No Automated Email/SMS Delivery**: Creating users or scheduling interviews records rows in `public.notifications`, `public.interviews`, and `public.event_outbox`; external SMTP/calendar invites are handled downstream by outbox consumers.
+
+
+See [Onboarding and controlled trial setup](docs/ONBOARDING_AND_TRIAL_SETUP.md) for migrations 30–32, field ownership, review controls and verification.
