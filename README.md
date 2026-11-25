@@ -1,5 +1,30 @@
 # HireNestOS — Enterprise Workforce & Staffing Operating System
 
+## What I changed for this request
+
+**Objective:** collect onboarding details once and keep Admin review, user profiles, organisations and teams synchronised.
+
+- Added candidate/client/vendor onboarding fields, including contact/company details and conditional FTE/C2C/C2H salary or commercial-rate information.
+- Added detailed Admin signup review and approval that populates linked user, organisation and primary-contact records.
+- Added profile/team synchronisation, older-account completion and existing-candidate linking without duplicate user or organisation entities.
+- Fixed Bench Profile/BGV on the first save; added employment fields to single/bulk uploads, candidate management and submissions.
+- Added immediate-only vendor/internal submission filtering and automatic rejection with reasons. Missing availability requires review.
+- Added controlled trial extensions, reviewer-selected days, reminders, negotiated pricing, scoped permissions, auditing and TypeScript fixes.
+
+## Verification and merge requirements
+
+**Checked:** 85 isolated database tests, 18 regression tests, application type check and production build. Local browser checks covered Admin login/CEO landing and single/bulk employment forms; production workflows are not fully verified.
+
+**Main:** compatible with upstream `3f5ff7e`, with no merge conflict against that revision. Future main changes require another check.
+
+**After merging:** confirm Vercel deployment, apply missing database migrations, configure server/email credentials, and test live workflows. Merging alone does not finish these steps. Real email delivery and team invitations remain unverified.
+
+See [setup instructions](docs/ONBOARDING_AND_TRIAL_SETUP.md) for migrations **31–35**. The earlier test database already contains these structures under older filenames; do not blindly rerun table-creation scripts or `01_schema.sql` on an existing database.
+
+---
+
+## Project reference
+
 HireNestOS is a multi-tenant staffing and recruitment operating system built for **HireNest Workforce**. It connects four core portals under a unified, row-level-secured Supabase database and deterministic RPC contract:
 
 1. **HireNest HQ (`admin`, `recruiter`)** — Full pipeline control, organization & user approval governance, requirement assignments, deterministic matching overrides, vendor SLA & tier scorecards, feedback moderation, dispute resolution, and platform configuration.
@@ -150,7 +175,7 @@ Gemini AI is strictly an optional, server-guarded assistant (`/api/gemini/sugges
 
 - **In-Memory Gemini Rate Limiter (20 req/hr)**: The per-user rate limit of 20 requests/hour on `/api/gemini/suggest` is stored in memory inside `server.ts`. It resets on server restart and is scoped per Node process instance.
 - **Client-Side Notification Polling**: The notification bell polls `public.notifications` every 30 seconds via React Query rather than opening persistent WebSocket channels.
-- **No Automated Email/SMS Delivery**: Creating users or scheduling interviews records rows in `public.notifications`, `public.interviews`, and `public.event_outbox`; external SMTP/calendar invites are handled downstream by outbox consumers.
+- **External delivery requires configuration**: trial reminder/extension emails use the existing outbox worker, and team invitations use the existing invitation services. Server-side Supabase administration and email-provider credentials are required; actual email delivery has not been verified. SMS/calendar integrations are outside this change.
 
 
-See [Onboarding and controlled trial setup](docs/ONBOARDING_AND_TRIAL_SETUP.md) for migrations 30–32, field ownership, review controls and verification.
+See [Onboarding and controlled trial setup](docs/ONBOARDING_AND_TRIAL_SETUP.md) for migrations 31–35, field ownership, review controls and verification.
